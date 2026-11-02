@@ -45,7 +45,7 @@ jobs:
       PMI_API_REQUIRE_AUTH: "false"
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
           enable-cache: true
@@ -96,7 +96,7 @@ jobs:
       PMI_FIXTURES_DIR: ${{ github.workspace }}/pmi-demo/fixtures
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
           enable-cache: true
@@ -180,7 +180,7 @@ jobs:
         working-directory: infra/terraform/lambda/slack_notifier
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.13"
       - run: uvx ruff check --output-format github .
