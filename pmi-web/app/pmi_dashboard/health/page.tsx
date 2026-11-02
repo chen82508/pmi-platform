@@ -31,92 +31,103 @@ async function load(): Promise<State> {
   }
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  healthy: "bg-emerald-100 text-emerald-900 border-emerald-300",
-  degraded: "bg-amber-100 text-amber-900 border-amber-300",
-  down: "bg-red-100 text-red-900 border-red-300",
+const STATUS_STYLES: Record<string, string> = {
+  healthy: "bg-positive-soft text-[#047857]",
+  degraded: "bg-[#FEF3C7] text-[#92400E]",
+  down: "bg-negative-soft text-[#B91C1C]",
 };
+
+function Pill({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+        ok ? "bg-positive/15 text-positive" : "bg-negative/15 text-[#FCA5A5]"
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-positive" : "bg-negative"}`} />
+      {label}
+    </span>
+  );
+}
 
 export default async function Health() {
   const { apiHealth, sources, error } = await load();
+  const apiOk = apiHealth?.status === "ok";
+  const dbOk = String(apiHealth?.db) === "true" || apiHealth?.db === "ok";
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Health</h1>
-        <p className="text-ink-muted text-sm mt-1">
-          Operational status from <code className="font-mono text-xs">pmi-api</code>.
-        </p>
-      </header>
-
-      {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 font-mono">
-          {error}
+    <>
+      <section className="hero-band pb-20 pt-10">
+        <div className="container-x">
+          <p className="eyebrow text-[#93B4F8]">Operations</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Health</h1>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Pill ok={apiOk} label={`pmi-api ${apiHealth?.status ?? "unreachable"}`} />
+            <Pill ok={dbOk} label={dbOk ? "database connected" : "database unavailable"} />
+          </div>
         </div>
-      )}
-
-      <section className="rounded-lg border border-surface-border bg-surface p-5">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-ink-muted">
-          pmi-api
-        </h2>
-        <dl className="mt-3 grid grid-cols-[120px_1fr] text-sm gap-y-1">
-          <dt className="text-ink-muted">status</dt>
-          <dd>{apiHealth?.status ?? "—"}</dd>
-          <dt className="text-ink-muted">db</dt>
-          <dd>{apiHealth?.db ?? "—"}</dd>
-        </dl>
       </section>
 
-      <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-ink-muted mb-3">
-          Ingest sources
-        </h2>
-        {sources.length === 0 ? (
-          <p className="text-sm text-ink-muted">No source rows yet.</p>
-        ) : (
-          <table className="w-full text-sm bg-surface border border-surface-border rounded-lg overflow-hidden">
-            <thead className="text-xs uppercase tracking-wide text-ink-muted bg-surface-muted">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">source</th>
-                <th className="text-left px-4 py-2 font-medium">status</th>
-                <th className="text-right px-4 py-2 font-medium">last success</th>
-                <th className="text-right px-4 py-2 font-medium">records 24h</th>
-                <th className="text-right px-4 py-2 font-medium">failures</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((s) => (
-                <tr key={s.source} className="border-t border-surface-border">
-                  <td className="px-4 py-2 font-mono text-xs">{s.source}</td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={`inline-block rounded-full border px-2 py-0.5 text-xs ${
-                        STATUS_COLORS[s.status] ?? "bg-surface-muted text-ink-muted"
-                      }`}
-                    >
-                      {s.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-right text-xs text-ink-muted">
-                    {s.last_success_at
-                      ? new Date(s.last_success_at).toISOString().slice(0, 19).replace("T", " ")
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {s.records_24h ?? "—"}
-                    {s.expected_records_24h && (
-                      <span className="text-ink-muted text-xs"> / {s.expected_records_24h}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {s.consecutive_failures}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="container-x -mt-10 space-y-6">
+        {error && (
+          <div className="card p-5 font-mono text-sm text-[#B91C1C]">{error}</div>
         )}
-      </section>
-    </div>
+
+        <section className="card p-5">
+          <div className="mb-4 flex items-baseline justify-between">
+            <h2 className="card-title">Ingest sources</h2>
+            <span className="text-xs text-ink-muted">audit_source_health</span>
+          </div>
+          {sources.length === 0 ? (
+            <p className="text-sm text-ink-muted">
+              No source rows. Exchange ingestion is not part of this repository; the demo data
+              is seeded from fixtures.
+            </p>
+          ) : (
+            <div className="-mx-5 -mb-5 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-y border-surface-border bg-surface-muted text-ink-muted">
+                    <th className="eyebrow px-5 py-2.5 text-left">Source</th>
+                    <th className="eyebrow px-4 py-2.5 text-left">Status</th>
+                    <th className="eyebrow px-4 py-2.5 text-right">Last success</th>
+                    <th className="eyebrow px-4 py-2.5 text-right">Records 24h</th>
+                    <th className="eyebrow px-5 py-2.5 text-right">Failures</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-border">
+                  {sources.map((s) => (
+                    <tr key={s.source}>
+                      <td className="px-5 py-3 font-mono text-xs">{s.source}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            STATUS_STYLES[s.status] ?? "bg-surface-muted text-ink-muted"
+                          }`}
+                        >
+                          {s.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-ink-muted">
+                        {s.last_success_at
+                          ? new Date(s.last_success_at).toISOString().slice(0, 19).replace("T", " ")
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {s.records_24h ?? "—"}
+                        {s.expected_records_24h && (
+                          <span className="text-xs text-ink-muted"> / {s.expected_records_24h}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums">{s.consecutive_failures}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

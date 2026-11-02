@@ -15,43 +15,51 @@ export function DriversTable({ components, limit = 8 }: { components: ExplainCom
     .slice(0, limit);
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-surface-border bg-surface">
+    <div className="-mx-5 -mb-5 overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="text-xs uppercase tracking-wide text-ink-muted">
-          <tr className="border-b border-surface-border">
-            <th className="px-4 py-2.5 text-left font-medium">Market</th>
-            <th className="px-4 py-2.5 text-left font-medium">Venue</th>
-            <th className="px-4 py-2.5 text-right font-medium">Price</th>
-            <th className="px-4 py-2.5 text-left font-medium w-40">Relevancy</th>
-            <th className="px-4 py-2.5 text-left font-medium">YES moves index</th>
+        <thead>
+          <tr className="border-y border-surface-border bg-surface-muted text-ink-muted">
+            <th className="eyebrow px-5 py-2.5 text-left">Market</th>
+            <th className="eyebrow px-4 py-2.5 text-left">Venue</th>
+            <th className="eyebrow px-4 py-2.5 text-right">Price</th>
+            <th className="eyebrow w-44 px-4 py-2.5 text-left">Relevancy</th>
+            <th className="eyebrow px-5 py-2.5 text-left">YES moves index</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-surface-border">
           {rows.map((c) => (
-            <tr key={c.market_id}>
-              <td className="px-4 py-2.5">{stripMd(c.title)}</td>
-              <td className="px-4 py-2.5 text-ink-muted">{c.venue ?? "—"}</td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+            <tr key={c.market_id} className="hover:bg-surface-muted/60">
+              <td className="px-5 py-3 font-medium text-ink">{stripMd(c.title)}</td>
+              <td className="px-4 py-3">
+                <span className="rounded-md bg-surface-muted px-2 py-0.5 text-xs capitalize text-ink-muted">
+                  {c.venue ?? "—"}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-right font-semibold tabular-nums">
                 {c.last_price !== null ? `${Math.round(c.last_price * 100)}%` : "—"}
               </td>
-              <td className="px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-24 rounded bg-surface-muted">
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-1.5 w-24 overflow-hidden rounded-full bg-brand-soft">
                     <div
-                      className="h-1.5 rounded bg-accent"
+                      className="h-1.5 rounded-full bg-brand"
                       style={{ width: `${Math.round(Math.min(1, c.relevancy) * 100)}%` }}
                     />
                   </div>
                   <span className="text-xs tabular-nums text-ink-muted">{c.relevancy.toFixed(2)}</span>
                 </div>
               </td>
-              <td className="px-4 py-2.5">
+              <td className="px-5 py-3">
                 {c.direction > 0 ? (
-                  <span className="text-emerald-700">▲ up</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-positive-soft px-2 py-0.5 text-xs font-semibold text-[#047857]">
+                    ▲ Up
+                  </span>
                 ) : c.direction < 0 ? (
-                  <span className="text-red-700">▼ down</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-negative-soft px-2 py-0.5 text-xs font-semibold text-[#B91C1C]">
+                    ▼ Down
+                  </span>
                 ) : (
-                  <span className="text-ink-muted">—</span>
+                  <span className="text-ink-faint">—</span>
                 )}
               </td>
             </tr>
@@ -59,7 +67,7 @@ export function DriversTable({ components, limit = 8 }: { components: ExplainCom
         </tbody>
       </table>
       {components.length > rows.length && (
-        <p className="border-t border-surface-border px-4 py-2 text-xs text-ink-muted">
+        <p className="border-t border-surface-border px-5 py-2.5 text-xs text-ink-muted">
           Top {rows.length} of {components.length} components by relevancy.
         </p>
       )}

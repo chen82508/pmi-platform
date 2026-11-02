@@ -1,30 +1,22 @@
 "use client";
 
 /**
- * Score history line chart.
+ * Score history area chart.
  *
- *   - recharts ResponsiveContainer + LineChart
  *   - X-axis as numeric timestamp with scale="time"
  *   - Y-axis fitted to the data (padded, clamped to [0, 100]): a fixed 0–100
  *     axis flattens a two-week move of a couple of points into a straight line
  */
 
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useId } from "react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { fittedDomain } from "@/lib/chart";
 import type { HistoryPoint } from "@/lib/types";
 
 interface ScoreHistoryChartProps {
   points: HistoryPoint[];
-  /** Pixel height for the responsive container. Default 360. */
+  /** Pixel height for the responsive container. Default 320. */
   height?: number;
 }
 
@@ -36,13 +28,14 @@ interface ChartPoint {
   score: number | null;
 }
 
-export function ScoreHistoryChart({ points, height = 360 }: ScoreHistoryChartProps) {
+const BRAND = "#2563EB";
+const AXIS = "#8A97AB";
+
+export function ScoreHistoryChart({ points, height = 320 }: ScoreHistoryChartProps) {
+  const gradientId = `g${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   if (points.length === 0) {
     return (
-      <div
-        className="flex items-center justify-center text-sm text-ink-muted"
-        style={{ height }}
-      >
+      <div className="flex items-center justify-center text-sm text-ink-muted" style={{ height }}>
         No history yet — run the pipeline a few times and refresh.
       </div>
     );
@@ -52,45 +45,53 @@ export function ScoreHistoryChart({ points, height = 360 }: ScoreHistoryChartPro
     ts: new Date(p.as_of).getTime(),
     score: p.score !== null ? Number(p.score) : null,
   }));
-  const domain = fittedDomain(
-    data.flatMap((d) => (d.score === null ? [] : [d.score])),
-  );
+  const domain = fittedDomain(data.flatMap((d) => (d.score === null ? [] : [d.score])));
 
   return (
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer>
-        <LineChart data={data} margin={{ top: 20, right: 20, left: 0, bottom: 40 }}>
-          <CartesianGrid stroke="#B9C0D4" vertical={false} />
+        <AreaChart data={data} margin={{ top: 12, right: 8, left: -8, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={BRAND} stopOpacity={0.22} />
+              <stop offset="100%" stopColor={BRAND} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="#E3E8EF" strokeDasharray="3 4" vertical={false} />
           <XAxis
             dataKey="ts"
             type="number"
             scale="time"
             domain={["dataMin", "dataMax"]}
-            stroke="#30374F"
-            tick={{ fill: "#30374F", fontSize: 12 }}
-            tickFormatter={(ts: number) => {
-              const d = new Date(ts);
-              const day = d.getDate();
-              const month = d.toLocaleString("default", { month: "short" });
-              return `${month} ${day}`;
-            }}
+            axisLine={false}
+            tickLine={false}
+            tickMargin={10}
+            minTickGap={24}
+            tick={{ fill: AXIS, fontSize: 12 }}
+            tickFormatter={(ts: number) =>
+              new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+            }
           />
           <YAxis
-            stroke="#30374F"
             domain={domain}
-            tickCount={6}
+            tickCount={5}
             allowDecimals={false}
-            tick={{ fill: "#30374F", fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+            tick={{ fill: AXIS, fontSize: 12 }}
           />
           <Tooltip
-            cursor={false}
+            cursor={{ stroke: BRAND, strokeOpacity: 0.35, strokeDasharray: "3 3" }}
             contentStyle={{
-              background: "#F7B27A",
+              background: "#0A2540",
               border: "none",
-              borderRadius: 8,
-              color: "#30374F",
-              fontWeight: 600,
+              borderRadius: 10,
+              boxShadow: "0 8px 24px rgba(10,37,64,0.25)",
+              padding: "8px 12px",
             }}
+            labelStyle={{ color: "rgba(255,255,255,0.65)", fontSize: 12, marginBottom: 2 }}
+            itemStyle={{ color: "#fff", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
             labelFormatter={(ts: number) =>
               new Date(ts).toLocaleString("en-US", {
                 day: "numeric",
@@ -100,21 +101,20 @@ export function ScoreHistoryChart({ points, height = 360 }: ScoreHistoryChartPro
                 minute: "2-digit",
               })
             }
-            formatter={(v) => [
-              typeof v === "number" ? v.toFixed(2) : "n/a",
-              "score",
-            ]}
+            formatter={(v) => [typeof v === "number" ? v.toFixed(2) : "n/a", "Score"]}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="score"
-            stroke="#6594AB"
-            strokeWidth={2}
+            stroke={BRAND}
+            strokeWidth={2.25}
+            fill={`url(#${gradientId})`}
             dot={false}
+            activeDot={{ r: 4.5, fill: BRAND, stroke: "#fff", strokeWidth: 2 }}
             isAnimationActive={false}
             connectNulls={false}
           />
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

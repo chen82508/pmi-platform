@@ -81,16 +81,18 @@ export function RefreshScoreButton({ indexId }: { indexId: string }) {
             ? "Retry refresh"
             : "Refresh score";
 
-  const className =
-    "rounded-md border border-surface-border bg-surface px-3 py-1.5 text-sm hover:bg-surface-raised disabled:opacity-60 disabled:cursor-default";
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button type="button" className={className} onClick={run} disabled={busy}>
+      <button type="button" className="btn-on-dark" onClick={run} disabled={busy}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={busy ? "animate-spin" : undefined}>
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <path d="M21 3v6h-6" />
+        </svg>
         {label}
       </button>
       {phase === "error" && detail && (
-        <span className="text-xs text-red-700">{detail}</span>
+        <span className="text-xs text-[#FCA5A5]">{detail}</span>
       )}
     </span>
   );

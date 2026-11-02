@@ -131,13 +131,13 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
 
   const busy = phase === "starting" || phase === "running";
   const inputCls =
-    "w-20 rounded-md border border-surface-border bg-surface px-2 py-1 text-sm";
+    "w-24 rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm tabular-nums focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20";
 
   return (
-    <div className="rounded-lg border border-surface-border bg-surface p-4 space-y-4">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-4">
         <label className="text-sm">
-          <span className="block text-xs text-ink-muted mb-1">Days back</span>
+          <span className="eyebrow mb-1.5 block text-ink-muted">Days back</span>
           <input
             type="number"
             min={1}
@@ -149,7 +149,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
           />
         </label>
         <label className="text-sm">
-          <span className="block text-xs text-ink-muted mb-1">Step (hours)</span>
+          <span className="eyebrow mb-1.5 block text-ink-muted">Step (hours)</span>
           <input
             type="number"
             min={1}
@@ -166,7 +166,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
           type="button"
           onClick={run}
           disabled={busy}
-          className="rounded-md border border-surface-border bg-surface px-3 py-1.5 text-sm hover:bg-surface-raised disabled:opacity-60 disabled:cursor-default"
+          className="btn-primary"
         >
           {phase === "starting"
             ? "Starting…"
@@ -178,7 +178,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
           <button
             type="button"
             onClick={download}
-            className="rounded-md border border-surface-border bg-surface px-3 py-1.5 text-sm hover:bg-surface-raised"
+            className="btn-secondary"
           >
             Download CSV
           </button>
@@ -186,7 +186,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
       </div>
 
       {phase === "error" && error && (
-        <p className="text-xs text-red-700 font-mono">{error}</p>
+        <p className="font-mono text-xs text-[#B91C1C]">{error}</p>
       )}
 
       {points && points.length > 0 && (

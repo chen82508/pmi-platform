@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,7 +8,41 @@
 
 html,
 body {
-  height: 100%;
-  background-color: theme("colors.surface.muted");
+  min-height: 100%;
+  background-color: theme("colors.canvas");
   color: theme("colors.ink.DEFAULT");
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  /* Full-width navy band under the header; page content can overlap it. */
+  .hero-band {
+    @apply bg-navy text-white;
+    background-image: radial-gradient(circle at 85% -20%, rgba(37, 99, 235, 0.35), transparent 55%);
+  }
+  .container-x {
+    @apply mx-auto max-w-6xl px-6;
+  }
+  .card {
+    @apply rounded-xl border border-surface-border bg-surface shadow-card;
+  }
+  .card-title {
+    @apply text-sm font-semibold text-ink;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em];
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-default disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-[#1D4FD8];
+  }
+  .btn-secondary {
+    @apply btn border border-surface-border bg-surface text-ink hover:border-brand hover:text-brand;
+  }
+  .btn-on-dark {
+    @apply btn border border-white/20 bg-white/10 text-white hover:bg-white/20;
+  }
 }

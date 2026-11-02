@@ -29,11 +29,11 @@ and market prices that produced it.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/dashboard-indexes.png" alt="Index list with current scores, 14-day change and sparklines"><br><sub><b>Index list.</b> Current score, 14-day change and trend for every index with readings.</sub></td>
+    <td width="50%"><img src="docs/images/dashboard-indexes.png" alt="Index list with current scores, 14-day change and sparklines"><br><sub><b>Index list.</b> Portfolio KPIs, then each live index with its score, 14-day change and trend.</sub></td>
     <td width="50%"><img src="docs/images/index-war.png" alt="War index detail: score, history chart, and the markets driving it"><br><sub><b>Explainability.</b> Score history plus the markets behind it: price, relevancy from the factor judgements, and which way a YES moves the index.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/index-senate.png" alt="US Senate 2026 projected Republican seats over 14 days"><br><sub><b>Seat projection.</b> 35 Senate races folded into a Poisson-binomial projection of Republican seats.</sub></td>
+    <td width="50%"><img src="docs/images/index-senate.png" alt="US Senate 2026 projected Republican seats over 14 days"><br><sub><b>Seat projection.</b> 35 Senate races folded into a Poisson-binomial projection of Republican seats, with its 14-day path.</sub></td>
     <td width="50%"><img src="docs/images/backtest.png" alt="Backtest replay with chart and CSV download"><br><sub><b>Backtest.</b> Replays an index over past prices as a durable, checkpointed workflow, then charts it and offers the CSV.</sub></td>
   </tr>
 </table>
