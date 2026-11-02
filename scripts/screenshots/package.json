@@ -1,0 +1,9 @@
+{
+  "name": "pmi-screenshots",
+  "private": true,
+  "description": "Regenerates the README screenshots and walkthrough GIF from a running demo stack.",
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.64.1"
+  }
+}

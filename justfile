@@ -47,7 +47,7 @@ bootstrap: migrate seed
 
 # Score an index definition in-process against the fixtures (no DB, no LLM).
 dry-run YAML='pmi_core/index_defs/war-index-2026.yaml':
-    cd {{root_dir}}/pmi-core && python -m pmi_core.cli dry-run {{YAML}} --compact
+    cd {{root_dir}}/pmi-core && ../.venv/bin/python -m pmi_core.cli dry-run {{YAML}} --compact
 
 # A fresh stack, the full demo bootstrap, then the assertions CI runs.
 # WARNING: `down -v` deletes this stack's database volume.
@@ -57,6 +57,14 @@ e2e:
     just up
     just bootstrap
     docker exec -i pmi-postgres psql -U pmi -d pmi -v ON_ERROR_STOP=1 -At < scripts/demo_assertions.sql
+
+# Needs a fresh demo (`just e2e`), Google Chrome installed, and uv (for Pillow).
+# Regenerate the README screenshots and walkthrough GIF from the running stack.
+screenshots:
+    cd {{root_dir}}/scripts/screenshots && npm ci --no-audit --no-fund
+    rm -rf /tmp/pmi-frames
+    node {{root_dir}}/scripts/screenshots/capture.mjs http://localhost:3000 {{root_dir}}/docs/images /tmp/pmi-frames
+    uv run --with pillow python -I {{root_dir}}/scripts/screenshots/make_gif.py /tmp/pmi-frames {{root_dir}}/docs/images/walkthrough.gif
 
 # ── tests (same commands CI runs) ────────────────────────────────────────────
 

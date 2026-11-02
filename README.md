@@ -286,6 +286,13 @@ governors, S&P 500 and so on) and a few API routes and worker jobs for
 verticals that depended on the removed sources, such as sports and esports
 boards, still run but return little or nothing on the fixture data.
 
+## Working on the code
+
+[`CLAUDE.md`](CLAUDE.md) is the contributor guide (layout, commands, the
+invariants that keep scores reproducible). Task playbooks, such as adding an
+index, verifying a change, async safety, the dashboard design system and the
+Terraform stack, live in [`.claude/skills/`](.claude/skills/).
+
 ## Repository layout
 
 ```
@@ -296,7 +303,7 @@ pmi-mcp/         MCP server
 pmi-web/         Next.js dashboard
 pmi-notify/      Slack notification helper
 pmi-demo/        synthetic markets + their generator
-scripts/         shared demo assertions (CI and `just e2e`)
+scripts/         shared demo assertions (CI and `just e2e`), README screenshot tooling
 docs/images/     README screenshots
 mlflow/          MLflow server image
 db/init/         Postgres first-boot SQL (extensions, mlflow database)
