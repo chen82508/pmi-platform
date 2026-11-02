@@ -1,0 +1,8 @@
+aws_region    = "us-west-2"
+environment   = "dev"
+instance_type = "t3.large"
+
+# Restrict the dashboard to your own network.
+http_ingress_cidrs = ["203.0.113.0/24"]
+
+alarm_email = "oncall@example.com"

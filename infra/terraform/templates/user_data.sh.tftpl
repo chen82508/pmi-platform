@@ -1,0 +1,60 @@
+#!/bin/bash
+# First-boot bootstrap: Docker + CloudWatch agent, then the compose stack as a
+# systemd unit so it comes back after reboots and EC2 auto-recovery.
+set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y ca-certificates curl git
+
+# Docker Engine + compose plugin from Docker's apt repository.
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# CloudWatch agent: memory + disk metrics the alarms read.
+curl -fsSL -o /tmp/amazon-cloudwatch-agent.deb \
+  https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+dpkg -i /tmp/amazon-cloudwatch-agent.deb
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'JSON'
+${cloudwatch_agent_config}
+JSON
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+%{ if repo_url != "" ~}
+git clone --branch "${repo_ref}" --depth 1 "${repo_url}" /opt/pmi-platform
+cd /opt/pmi-platform
+cp -n .env.example .env
+sed -i 's/^PMI_WEB_PORT=.*/PMI_WEB_PORT=80/; s/^SLACK_ENVIRONMENT=.*/SLACK_ENVIRONMENT=${environment}/' .env
+
+cat > /etc/systemd/system/pmi.service <<'UNIT'
+[Unit]
+Description=PMI platform (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/pmi-platform
+ExecStart=/usr/bin/docker compose --profile pmi --profile web up -d --build
+ExecStop=/usr/bin/docker compose --profile pmi --profile web down
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now pmi.service
+
+# Schema + the fixture demo (synthetic markets, pre-labelled judgements).
+docker compose --profile pmi run --rm pmi-core migrate
+docker compose --profile pmi run --rm pmi-core seed
+docker compose --profile pmi run --rm pmi-core demo bind
+docker exec pmi-worker pmi-workers run tag-races
+docker compose --profile pmi run --rm pmi-core demo history --days 14
+%{ endif ~}

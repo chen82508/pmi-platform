@@ -1,0 +1,130 @@
+# League of Legends World Championship 2026 — tournament structure.
+#
+# This file is the bracket's STRUCTURE layer (the published format + seeding),
+# which persists regardless of whether a market is still open. The DYNAMIC layer
+# (who plays whom, odds, who won) comes from the markets + their resolutions at
+# serve time, so finished contracts clear while the tree/standings stay complete.
+# Only published facts live here — never a predicted result.
+#
+# Three chained stages: Play-In (4 teams, 1 advances) → Swiss (16 teams, 8
+# advance) → Knockout (8 teams, single-elim to the title). A team's code is how
+# markets map onto this structure (Kalshi ticker suffix / folded team name).
+
+id: lol-worlds-2026
+game: lol
+title: League of Legends World Championship 2026
+# A market belongs to this tournament when its Kalshi rules / Polymarket title
+# tail contains one of these tokens (the name isn't in the title itself). Venues
+# spell it differently per stage — Kalshi "Worlds 2026", Polymarket "Worlds
+# Play-In" / "Worlds Swiss" — so match the stable "Worlds" stem (there is one
+# Worlds per year; prior editions are resolved out).
+tournament_tokens:
+  - Worlds
+final:
+  date: "2026-11-14"   # Riot: Nov 14 19:00 UTC (Brooklyn local); Nov 15 is the Asia-Pacific date
+  venue: Brooklyn, NY
+
+# Riot's official start times (lolesports.com), UTC. A venue's listed time is
+# fixed when it lists the match — the Kalshi ticker embeds it — so when Riot
+# reshuffles the slots after listing, the venue time goes stale (2026-10-28:
+# Kalshi/Polymarket put T1–MKOI on Oct 29 and BLG–TES on Oct 28, Riot swapped
+# them). An entry here overrides the displayed start of the open match between
+# the two codes nearest it in time. Only published times — add each round as
+# Riot posts it.
+schedule:
+  # Swiss round 4
+  - { a: MKOI, b: T1,  starts_at: "2026-10-28T20:00:00Z" }
+  - { a: LYON, b: IG,  starts_at: "2026-10-28T23:00:00Z" }
+  - { a: CFO,  b: KC,  starts_at: "2026-10-29T20:00:00Z" }
+  - { a: BLG,  b: TES, starts_at: "2026-10-29T23:00:00Z" }
+  - { a: TL,   b: LOS, starts_at: "2026-10-30T20:00:00Z" }
+  - { a: G2,   b: HLE, starts_at: "2026-10-30T23:00:00Z" }
+
+# Canonical roster — name (as the markets spell it), short code, region. The
+# Play-In four are known; the 15 direct Swiss teams get added when the draw is
+# published (the 16th Swiss slot is the Play-In winner, filled from results).
+teams:
+  - { name: Cloud9, code: C9, region: LTA }
+  - { name: FURIA Esports, code: FUR, region: LTA }
+  - { name: Karmine Corp, code: KC, region: LEC }
+  - { name: MVK Esports, code: MVK, region: LCP }
+  # 15 direct Swiss qualifiers (+ Play-In winner KC above = 16 Swiss teams). Names
+  # match how the markets spell them so the fold maps onto this roster.
+  - { name: "Gen.G", code: GEN, region: LCK }
+  - { name: Anyone's Legend, code: AL, region: LPL }
+  - { name: Team Liquid, code: TL, region: LTA }
+  - { name: G2 Esports, code: G2, region: LEC }
+  - { name: LOS, code: LOS, region: LTA }
+  - { name: Team Secret Whales, code: TSW, region: LCP }
+  - { name: Hanwha Life Esports, code: HLE, region: LCK }
+  - { name: Bilibili Gaming, code: BLG, region: LPL }
+  - { name: LYON, code: LYON, region: LEC }
+  - { name: Movistar KOI, code: MKOI, region: LEC }
+  - { name: T1, code: T1, region: LCK }
+  - { name: Top Esports, code: TES, region: LPL }
+  - { name: CTBC Flying Oyster, code: CFO, region: LCP }
+  - { name: Invictus Gaming, code: IG, region: LPL }
+  - { name: Dplus KIA, code: DK, region: LCK }
+
+stages:
+  # 4 teams, BO5 double-elimination, one slot into the Swiss stage.
+  #
+  # The bracket is a fixed DAG (published structure): round-1 matchups are seeded,
+  # every later slot's two teams come from an earlier slot's winner / loser. Only
+  # the seeding + topology live here — who actually won each slot (and the live
+  # odds for the open one) are filled from the markets by team pair at serve time,
+  # so a finished game clears from the board while the tree stays complete.
+  #   a/b source refs: {seed: CODE} | {winner: SLOT_ID} | {loser: SLOT_ID}
+  - id: play-in
+    kind: double_elim
+    title: Play-In
+    format: BO5
+    teams: [C9, FUR, KC, MVK]
+    advances: 1
+    bracket:
+      - { id: wb-r1-1,  round: Winners Round 1, group: winners, a: { seed: KC },         b: { seed: C9 } }
+      - { id: wb-r1-2,  round: Winners Round 1, group: winners, a: { seed: MVK },        b: { seed: FUR } }
+      - { id: wb-final, round: Winners Final,   group: winners, a: { winner: wb-r1-1 },  b: { winner: wb-r1-2 } }
+      - { id: lb-r1,    round: Losers Round 1,  group: losers,  a: { loser: wb-r1-1 },   b: { loser: wb-r1-2 } }
+      - { id: lb-final, round: Losers Final,    group: losers,  a: { loser: wb-final },  b: { winner: lb-r1 } }
+      - { id: qual,     round: Qualification,   group: final,   a: { winner: wb-final }, b: { winner: lb-final }, advances: true }
+
+  # 16 teams (15 direct + Play-In winner). Up to 5 rounds; same-record teams
+  # play; BO1 except 3-win / 3-loss deciders are BO3. First 8 to 3 wins advance,
+  # 3 losses eliminated. Pools seed round 1 (Pool 1 vs 4, Pool 2 vs 3); filled
+  # when the draw is published — standings derive from results, not from here.
+  - id: swiss
+    kind: swiss
+    title: Swiss Stage
+    rounds: 5
+    advance_wins: 3
+    eliminate_losses: 3
+    advances: 8
+    # Draw published 2026-10-20 (after KC won Play-In). Pool 1 drawn vs Pool 4,
+    # Pool 2 vs Pool 3; same region can't meet in round 1. `round1` is the published
+    # draw (round 1 is the only pre-seeded round); rounds 2–5 pair same-record teams
+    # with no rematches, so they derive from results — never listed here.
+    pools:
+      "1": [GEN, AL, TL, G2]
+      "2": [LOS, TSW, HLE, BLG]
+      "3": [LYON, MKOI, T1, TES]
+      "4": [CFO, IG, DK, KC]
+    teams: [GEN, AL, TL, G2, LOS, TSW, HLE, BLG, LYON, MKOI, T1, TES, CFO, IG, DK, KC]
+    round1:
+      - { a: GEN, b: IG }
+      - { a: TL,  b: CFO }
+      - { a: AL,  b: KC }
+      - { a: G2,  b: DK }
+      - { a: HLE, b: TES }
+      - { a: LOS, b: T1 }
+      - { a: TSW, b: LYON }
+      - { a: BLG, b: MKOI }
+
+  # 8 teams, BO5 single-elimination: quarterfinals → semifinals → final. Seeded
+  # from the Swiss top 8 (3-0 teams drawn against 3-2 teams); filled from results.
+  - id: knockout
+    kind: single_elim
+    title: Knockout Stage
+    format: BO5
+    advances: 1
+    seeds: []

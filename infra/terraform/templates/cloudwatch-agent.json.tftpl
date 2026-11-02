@@ -1,0 +1,16 @@
+{
+  "agent": { "metrics_collection_interval": 60 },
+  "metrics": {
+    "namespace": "${namespace}",
+    "append_dimensions": { "InstanceId": "$${aws:InstanceId}" },
+    "aggregation_dimensions": [["InstanceId"]],
+    "metrics_collected": {
+      "mem": { "measurement": ["mem_used_percent"] },
+      "disk": {
+        "resources": ["/"],
+        "measurement": ["disk_used_percent"],
+        "drop_device": true
+      }
+    }
+  }
+}

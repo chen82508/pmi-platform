@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [pmi-core, pmi-notify, pmi-api, pmi-workers, pmi-mcp]
+    services:
+      # The api / workers suites create a throwaway database per run on this
+      # server (pgvector + pg_trgm), so it mirrors the production image.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pmi
+          POSTGRES_PASSWORD: pmi
+          POSTGRES_DB: pmi
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pmi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PMI_TEST_DB_HOST: localhost
+      PMI_TEST_DB_PORT: "5432"
+      PMI_TEST_DB_USER: pmi
+      PMI_TEST_DB_PASSWORD: pmi
+      PMI_MLFLOW_ENABLED: "false"
+      PMI_API_REQUIRE_AUTH: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - name: Install workspace packages
+        run: |
+          uv venv .venv
+          uv pip install --python .venv -e "pmi-core[dev]" -e "pmi-notify[dev]" \
+            -e "pmi-api[dev]" -e "pmi-workers[dev]" -e "pmi-mcp[dev]"
+      - name: Lint
+        working-directory: ${{ matrix.package }}
+        run: ../.venv/bin/ruff check --output-format github .
+      - name: Test
+        working-directory: ${{ matrix.package }}
+        run: ../.venv/bin/pytest -q
+      - name: Fixture dry-run (no DB, no LLM)
+        if: matrix.package == 'pmi-core'
+        working-directory: pmi-core
+        run: |
+          for def in pmi_core/index_defs/*.yaml; do
+            ../.venv/bin/python -m pmi_core.cli dry-run "$def" --compact > /dev/null
+          done
+
+  demo-e2e:
+    name: fixture demo end-to-end
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pmi
+          POSTGRES_PASSWORD: pmi
+          POSTGRES_DB: pmi
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pmi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PMI_DB_HOST: localhost
+      PMI_DB_PORT: "5432"
+      PMI_DB_USER: pmi
+      PMI_DB_PASSWORD: pmi
+      PMI_DB_NAME: pmi
+      PMI_MLFLOW_ENABLED: "false"
+      PMI_ACTIVE_EMBEDDING_MODEL: ""
+      PMI_FIXTURES_DIR: ${{ github.workspace }}/pmi-demo/fixtures
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - name: Install
+        run: |
+          uv venv .venv
+          uv pip install --python .venv -e pmi-core -e pmi-notify -e pmi-workers
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Migrate, seed, bind fixture models, tag races
+        working-directory: pmi-core
+        run: |
+          pmi-core migrate
+          pmi-core seed
+          pmi-core demo bind
+          pmi-workers run tag-races
+      - name: Score 14 days of history
+        working-directory: pmi-core
+        run: pmi-core demo history --days 14
+      - name: Every demo index published a full non-null series
+        run: |
+          psql "postgresql://pmi:pmi@localhost:5432/pmi" -v ON_ERROR_STOP=1 -At <<'SQL'
+          SELECT d.index_id, count(s.score), round(min(s.score), 2), round(max(s.score), 2)
+            FROM ts_index_scores s JOIN core_index_definitions d ON d.id = s.index_definition_id
+           GROUP BY 1 ORDER BY 1;
+          DO $$
+          BEGIN
+            IF (SELECT count(DISTINCT s.index_definition_id) FROM ts_index_scores s
+                 WHERE s.score IS NOT NULL) < 3
+               OR EXISTS (SELECT 1 FROM ts_index_scores s
+                  GROUP BY s.index_definition_id HAVING count(s.score) < 15) THEN
+              RAISE EXCEPTION 'demo indices did not all publish 15 scored points';
+            END IF;
+            IF EXISTS (SELECT 1 FROM audit_evaluations WHERE model_id <> 'fixture/labels') THEN
+              RAISE EXCEPTION 'an evaluation bypassed the fixture provider';
+            END IF;
+          END $$;
+          SQL
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pmi-web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pmi-web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.17"
+      - uses: terraform-linters/setup-tflint@v6
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: tflint --format compact
+
+  lambda:
+    name: slack notifier lambda
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform/lambda/slack_notifier
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+      - run: uvx ruff check --output-format github .
+      - run: uvx --with pytest pytest -q
+
+  compose:
+    name: docker compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env
+      - run: docker compose --profile pmi --profile web --profile ollama config -q

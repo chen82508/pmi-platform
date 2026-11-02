@@ -1,0 +1,67 @@
+[project]
+name = "pmi-api"
+version = "0.1.0"
+description = "Read-only REST gateway over pmi-core. P0 ships /indexes + /health."
+requires-python = ">=3.12"
+
+dependencies = [
+    "pmi-core",
+    "pmi-notify",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.30.0",
+    "structlog>=24.1.0",
+    "pydantic>=2.7.0",
+    "httpx>=0.27.0",
+    # Ask Micah agent: MCP client side of pmi-mcp (routes/ask.py, ask_agent.py).
+    "mcp>=1.9,<2",
+    # Optional second tier of the /markets/search cache (pmi_api/search_cache.py);
+    # same spec as pmi-ingest. redis-py >=4.2 ships `redis.asyncio`.
+    "redis>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+pmi-api = "pmi_api.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pmi_api"]
+
+[tool.uv.sources]
+pmi-core = { path = "../pmi-core", editable = true }
+pmi-notify = { path = "../pmi-notify", editable = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "ASYNC"]
+# B008: FastAPI's `Depends(...)` / `Query(...)` defaults are the framework idiom.
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Public exception / schema names are part of the API contract.
+"pmi_api/ask_agent.py" = ["N818"]
+"pmi_api/db_guard.py" = ["N818", "UP047"]
+"pmi_api/search_cache.py" = ["N818"]
+"pmi_api/schemas.py" = ["N815"]
+# Test doubles mimic third-party signatures.
+"tests/*" = ["N805"]

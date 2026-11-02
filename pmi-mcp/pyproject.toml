@@ -1,0 +1,40 @@
+[project]
+name = "pmi-mcp"
+version = "0.1.0"
+description = "MCP server over pmi-api — Tier A discovery tools (SHIP-2.3)."
+requires-python = ">=3.12"
+
+dependencies = [
+    "mcp>=1.9,<2",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+pmi-mcp = "pmi_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pmi_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "ASYNC"]
+# B008: FastAPI's `Depends(...)` / `Query(...)` defaults are the framework idiom.
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

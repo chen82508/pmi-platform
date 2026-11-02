@@ -1,0 +1,62 @@
+# US Senate 2026 — projected Republican seat *share* (%).
+#
+# P0 status: runs on the current aggregator; score ≈ average P(R wins YES) over
+# single-seat senate 2026 markets that match both gating factors. Numerically
+# the score is mapped to 0..100 by the existing `weighted_average_x_100` path.
+#
+# Open gap (tracked as CORR-2.x in TODO-跑得對.md):
+# - polarity-aware aggregator that subtracts P(YES) when republican_on_yes=0
+#   (i.e. "Democrat wins on YES" markets).
+# - bucket collapse for same-state markets across multiple Polymarket conditions.
+#
+# Pair with `us-senate-2026-republican-seats.yaml` for the count variant.
+
+id: us-senate-2026-republican-share
+version: 5  # v5 (2026-06-14): drop the venue restriction — membership is relevance + the extraction stage, not a venue whitelist. All real-money venues join; a market only contributes if it classifies into a (us_state, party) observation, so cross-venue real-money noise that keyword-matches "senate" falls out at extraction. Play-money excluded by default (no include_play_money): not for relevance but because its market count would swamp the entity set; if ever opted in, entity_lean still drops is_play_money from the liquidity *weight* (they count via the simple-mean fallback only). Tier 0 floor + survivor cap bound the factor LLM loop over the real-money cross-venue union. v4 superseded same-day (had wrongly admitted manifold). v3 (2026-06-12): semantic anchor (T3) — activates the Tier 0 cosine floor that culls keyword noise ("Senate confirms nominee", legislation votes) before the factor LLM loop; discovery bar 0.78 (§4's high bar — the house variant's first cut at 0.7 matched 15k ids and saturated its cap, so the anchor must gate, not recruit). v2 (2026-06-12): cross-venue (CORR-3.12) + max_markets raised above the cross-venue hit count.
+title: "US Senate 2026 — Republican Seat Share (%)"
+owner: pmi-team
+
+# No `venues:` — all real-money venues (play-money excluded by default). The
+# extraction stage (classify into us_state, party) is the real membership filter;
+# the cap clears the cross-venue keyword union so id-DESC truncation never evicts
+# a parseable market before Tier 0 + extraction run.
+max_markets: 8000
+
+selectors:
+  - type: keyword
+    terms:
+      - "Senate"
+      - "Senator"
+      - "2026 Senate"
+      - "U.S. Senate"
+  - type: category
+    polymarket_tag: "politics"
+  - type: semantic
+    anchor: "2026 United States Senate elections — which party's candidate wins a state's Senate seat or which party controls the Senate"
+    min_similarity: 0.78
+
+factors:
+  - id: is_senate_race_2026
+    type: binary
+    prompt_ref: prompts/factors/is-senate-race-2026-v1
+    weight: 60
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+
+weighting:
+  liquidity:
+    method: quantile
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: weighted_average_x_100
+
+publish:
+  cadence: every_2h
+  channels: [api]

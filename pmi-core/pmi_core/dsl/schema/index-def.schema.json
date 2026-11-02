@@ -1,0 +1,579 @@
+{
+  "$defs": {
+    "AggregationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "collapse": {
+          "$ref": "#/$defs/CollapseSpec"
+        },
+        "formula": {
+          "default": "weighted_average_x_100",
+          "title": "Formula",
+          "type": "string"
+        },
+        "min_components": {
+          "default": 1,
+          "title": "Min Components",
+          "type": "integer"
+        },
+        "rollup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRollupSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "seat_projection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SeatProjectionSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "AggregationSpec",
+      "type": "object"
+    },
+    "CategorySelector": {
+      "additionalProperties": false,
+      "properties": {
+        "polymarket_tag": {
+          "title": "Polymarket Tag",
+          "type": "string"
+        },
+        "type": {
+          "const": "category",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "polymarket_tag"
+      ],
+      "title": "CategorySelector",
+      "type": "object"
+    },
+    "CollapseSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_spread_days": {
+          "default": 30,
+          "title": "Max Spread Days",
+          "type": "integer"
+        },
+        "representative": {
+          "default": "max_probability",
+          "enum": [
+            "max_probability",
+            "highest_liquidity",
+            "newest"
+          ],
+          "title": "Representative",
+          "type": "string"
+        }
+      },
+      "title": "CollapseSpec",
+      "type": "object"
+    },
+    "EntityRollupSpec": {
+      "additionalProperties": false,
+      "description": "How an entity formula rolls per-entity leaves up to the top-line score.\n\nThe per-entity (per-race / per-country) leaf is the formula's own\nliquidity-weighted mean of that entity's observations. This spec only\ngoverns what happens ABOVE the leaf, across entities:\n\n  * ``cross_entity`` \u2014 the cross-entity weighting. ``equal`` = simple mean\n    (every entity counts once, the MAGA design); ``liquidity`` = weight\n    each entity by its summed liquidity (the original CORR-1.8b behaviour,\n    kept as the default so the field is purely additive \u2014 omitting\n    ``rollup`` reproduces it byte-for-byte); ``gdp_pop_weighted`` = weight\n    each entity by 65 % GDP / 35 % population (the war-index geo rollup;\n    only valid for ``group_by: country``, weights from engine/geo.py).\n  * ``group_through`` \u2014 an optional intermediate level. When set, entities\n    are first folded into these groups (by ``cross_entity``) and the groups\n    are then folded into the top-line (also by ``cross_entity``), so a\n    two-step hierarchy weighs the intermediate level rather than the\n    leaves. ``us_state`` rolls ``us_house_district`` leaves up by state\n    (50 states weigh equally instead of 435 districts). ``region`` rolls\n    ``country`` leaves up by the 6-region taxonomy (country\u2192region\u2192world).\n  * ``include_zero_groups`` \u2014 only ``geo_weighted_mean``. When true, the\n    group layer (region) averages over its FULL country roster, scoring\n    absent countries as 0 so they drag the region down by their GDP/pop\n    weight (legacy ``include_zero_pmi=True`` for regions); the top layer\n    (world) still excludes 0-score groups (legacy world's\n    ``include_zero_pmi=False``).",
+      "properties": {
+        "cross_entity": {
+          "default": "liquidity",
+          "enum": [
+            "equal",
+            "liquidity",
+            "gdp_pop_weighted"
+          ],
+          "title": "Cross Entity",
+          "type": "string"
+        },
+        "group_through": {
+          "anyOf": [
+            {
+              "enum": [
+                "us_state",
+                "region"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Through"
+        },
+        "include_zero_groups": {
+          "default": false,
+          "title": "Include Zero Groups",
+          "type": "boolean"
+        }
+      },
+      "title": "EntityRollupSpec",
+      "type": "object"
+    },
+    "ExtractionSpec": {
+      "additionalProperties": false,
+      "description": "Declarative entity-extraction stage (CORR-1.8, 2026-06-12 design).\n\nUnifies the structural aggregation paths: the pipeline is\nselector \u2192 (extraction?) \u2192 formula. When declared, the engine groups the\nselected markets into per-entity directed observations \u2014 one entity per\n``group_by`` key (a US state, a House district), each observation a\nP(Republican side wins) read off one market \u2014 and the formula consumes\nentities instead of raw markets. ``seat_projection_sum`` folds one\nrepresentative Bernoulli per entity into the Poisson-binomial;\n``entity_lean_mean`` takes a liquidity-weighted mean per entity.\n\n``group_by`` names the entity key space AND the title grammar used to\nparse it (engine/extraction.py):\n\n  * ``us_state`` \u2014 per-state 2026 *Senate* race grammar\n    (engine/seat_mapping.py; one Class-II seat per state, so the state IS\n    the seat)\n  * ``us_house_district`` \u2014 per-district 2026 US House race grammar\n    (\"<State>('s) <Nth>/at-large District ... general election for the US\n    House of Representatives in 2026\")\n  * ``us_governor`` \u2014 per-state 2026 *Governor* race grammar\n    (one governorship per state, so the state IS the entity, same key\n    space as ``us_state`` but a distinct title grammar \u2014 \"gubernatorial /\n    governor race\", \"election for governor of <State>\")\n  * ``country`` \u2014 per-country war/conflict grammar (engine/geo.py; the\n    entity key is the country slug \"ukraine\", \"north-korea\"). No party\n    side \u2014 direction is the index's ``direction`` ternary factor, so\n    ``sides: none``. Patterns tier = the alias matcher (claims a title\n    naming exactly one country); ``llm_fallback`` picks the primary\n    country for bilateral titles (\"Russia invade Ukraine\").\n\n``methods`` are the extraction tiers, strictly precedence-ordered\nregardless of list order (pattern > candidate > LLM \u2014 a deterministic\nparse always beats a hint, which always beats an LLM extraction):\n\n  * ``patterns`` \u2014 party-direct per-venue title regexes\n  * ``candidates`` \u2014 candidate-name titles, party resolved from the\n    candidate label tag (groupItemTitle) or the index's audited\n    ``republican_on_yes`` factor evaluation\n  * ``llm_fallback`` \u2014 the index's ``type: extraction`` factor (an\n    audited structured extraction for titles no pattern understands;\n    strictly additive, validated against the entity key space, can never\n    override a deterministic parse)\n\n``sides`` declares what the two complementary sides of an entity are.\n``party`` (R/D) collapses two partisan markets into one directed\nP(R wins) \u2014 the MAGA design. ``none`` means the entity has no opposing\nsides at extraction time (war: a country is just a key; the\nescalation/peace direction lives in the ``direction`` factor consumed by\n``geo_weighted_mean``), so observations carry a sentinel party and the\ncandidates tier (which needs R/D) must be left out of ``methods``.",
+      "properties": {
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The even-year election cycle this index scopes to (e.g. 2026). When set, the engine (a) drops markets whose recovered election_cycle is a KNOWN different cycle \u2014 kalshi's yearless titles carry the cycle only in the ticker, so a 2028 market no longer pollutes a 2026 index \u2014 and (b) for us_state / us_governor keeps only entities the race_calendar lists as contested that cycle (us_house_district is all-435 pass-through). None = cycle-agnostic (every classified market, the pre-cycle behaviour). Markets with an UNDETERMINABLE cycle are kept (fail-open); the race_calendar gate is the backstop.",
+          "title": "Cycle"
+        },
+        "group_by": {
+          "enum": [
+            "us_state",
+            "us_house_district",
+            "us_governor",
+            "country"
+          ],
+          "title": "Group By",
+          "type": "string"
+        },
+        "methods": {
+          "items": {
+            "enum": [
+              "patterns",
+              "candidates",
+              "llm_fallback"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Methods",
+          "type": "array"
+        },
+        "sides": {
+          "default": "party",
+          "enum": [
+            "party",
+            "none"
+          ],
+          "title": "Sides",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_by"
+      ],
+      "title": "ExtractionSpec",
+      "type": "object"
+    },
+    "FactorSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "default": false,
+          "title": "Gate",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "prompt_ref": {
+          "title": "Prompt Ref",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "binary",
+            "ternary",
+            "score",
+            "extraction"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "prompt_ref"
+      ],
+      "title": "FactorSpec",
+      "type": "object"
+    },
+    "KeywordSelector": {
+      "additionalProperties": false,
+      "properties": {
+        "terms": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Terms",
+          "type": "array"
+        },
+        "type": {
+          "const": "keyword",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "terms"
+      ],
+      "title": "KeywordSelector",
+      "type": "object"
+    },
+    "LiquidityWeighting": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "default": "quantile",
+          "enum": [
+            "quantile",
+            "linear",
+            "none"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "play_money_weight": {
+          "default": 1.0,
+          "title": "Play Money Weight",
+          "type": "number"
+        }
+      },
+      "title": "LiquidityWeighting",
+      "type": "object"
+    },
+    "MoneynessWeighting": {
+      "additionalProperties": false,
+      "description": "Strike-aware re-weighting for price-ladder indexes (BTC Bull/Bear v4).\n\nAn \"above $X\" market's YES price is P(spot_T > X): it bundles *where spot is*\n(moneyness) with *directional conviction*. Under the signed formula a far-OTM\nstrike (X \u226b spot) is correctly priced ~0 yet contributes a spurious bearish\n``2\u00b70.05\u22121 \u2248 \u22120.9``. A strike ladder lists far more strikes above spot than a\nbook trades below it, so that structural skew \u2014 not sentiment \u2014 dragged BTC v3\nto ~16 (the def's KNOWN RESIDUAL).\n\nWhen enabled, each market is weighted by a Gaussian kernel in log-moneyness\n``ln(strike / spot)`` centred on the *ladder-implied spot* \u2014 the strike where\ninterpolated P(YES) crosses 0.5, read off the ladders themselves (no external\nprice feed, so the offline / $0 cache-hit path is preserved). Near-the-money\nstrikes, where price encodes genuine up/down conviction, dominate; deep OTM/ITM\nstrikes that only encode distance-from-spot decay to ~0. A balanced book then\nreads 50 and the index moves on real directional pricing.\n\nOpt-in (``enabled: false`` by default) and composes multiplicatively with\n``liquidity`` \u2014 an index that omits the block is byte-identical to before. See\n:mod:`pmi_core.engine.moneyness`.",
+      "properties": {
+        "bandwidth": {
+          "default": 0.05,
+          "exclusiveMinimum": 0.0,
+          "title": "Bandwidth",
+          "type": "number"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "min_ladder_size": {
+          "default": 4,
+          "minimum": 2,
+          "title": "Min Ladder Size",
+          "type": "integer"
+        }
+      },
+      "title": "MoneynessWeighting",
+      "type": "object"
+    },
+    "PublishSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "cadence": {
+          "default": "every_2h",
+          "enum": [
+            "real_time",
+            "hourly",
+            "every_2h",
+            "daily"
+          ],
+          "title": "Cadence",
+          "type": "string"
+        },
+        "channels": {
+          "items": {
+            "enum": [
+              "api",
+              "websocket",
+              "webhook"
+            ],
+            "type": "string"
+          },
+          "title": "Channels",
+          "type": "array"
+        }
+      },
+      "title": "PublishSpec",
+      "type": "object"
+    },
+    "SeatProjectionSpec": {
+      "additionalProperties": false,
+      "description": "Chamber geometry for seat-count / balance-of-power indexes (CORR-1.2).\n\nOnly consulted by seat-projection formulas and the senate-board endpoint\n(engine/seat_distribution.py). A US Senate is 100 seats = ~33 contested\n(Class II, on the 2026 ballot) + ~67 holdover (Class I + III, not on the\nballot). The holdover seats are constants added to every realization of\nthe Poisson-binomial seat distribution; ``total_seats`` derives the other\nparty's count, and ``majority_threshold`` is the tail boundary (51 for an\noutright Senate majority; pass total/2 to model a VP tie-break as control).\n\nThe House is the natural zero-holdover case: all 435 seats are up every\ncycle, so ``holdover_r = holdover_d = 0`` and ``total_seats = 435``,\n``majority_threshold = 218``.",
+      "properties": {
+        "correlation": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation"
+        },
+        "holdover_d": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Holdover D",
+          "type": "integer"
+        },
+        "holdover_r": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Holdover R",
+          "type": "integer"
+        },
+        "majority_threshold": {
+          "default": 51,
+          "minimum": 1,
+          "title": "Majority Threshold",
+          "type": "integer"
+        },
+        "tie_break": {
+          "anyOf": [
+            {
+              "enum": [
+                "R",
+                "D"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tie Break"
+        },
+        "total_seats": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Total Seats",
+          "type": "integer"
+        }
+      },
+      "title": "SeatProjectionSpec",
+      "type": "object"
+    },
+    "SemanticSelector": {
+      "additionalProperties": false,
+      "description": "P1+ \u2014 included so YAML written today validates against a forward-compatible shape.",
+      "properties": {
+        "anchor": {
+          "title": "Anchor",
+          "type": "string"
+        },
+        "min_similarity": {
+          "default": 0.78,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Similarity",
+          "type": "number"
+        },
+        "type": {
+          "const": "semantic",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "anchor"
+      ],
+      "title": "SemanticSelector",
+      "type": "object"
+    },
+    "WeightingSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "liquidity": {
+          "$ref": "#/$defs/LiquidityWeighting"
+        },
+        "moneyness": {
+          "$ref": "#/$defs/MoneynessWeighting"
+        }
+      },
+      "title": "WeightingSpec",
+      "type": "object"
+    }
+  },
+  "$id": "https://pmi-platform.example.com/schema/index-def.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Top-level declarative PMI definition.",
+  "properties": {
+    "aggregation": {
+      "$ref": "#/$defs/AggregationSpec"
+    },
+    "exclude_terms": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Exclude Terms",
+      "type": "array"
+    },
+    "extraction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExtractionSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "factors": {
+      "items": {
+        "$ref": "#/$defs/FactorSpec"
+      },
+      "minItems": 1,
+      "title": "Factors",
+      "type": "array"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "include_play_money": {
+      "default": false,
+      "title": "Include Play Money",
+      "type": "boolean"
+    },
+    "max_markets": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Markets"
+    },
+    "min_volume_24h": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Min Volume 24H"
+    },
+    "owner": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Owner"
+    },
+    "publish": {
+      "$ref": "#/$defs/PublishSpec"
+    },
+    "selectors": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/KeywordSelector"
+          },
+          {
+            "$ref": "#/$defs/CategorySelector"
+          },
+          {
+            "$ref": "#/$defs/SemanticSelector"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Selectors",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "venues": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Venues"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "weighting": {
+      "$ref": "#/$defs/WeightingSpec"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "title",
+    "selectors",
+    "factors"
+  ],
+  "title": "IndexDef",
+  "type": "object"
+}

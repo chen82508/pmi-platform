@@ -1,0 +1,75 @@
+# US Governors 2026 — projected Republican governorship *count* (#).
+#
+# The third chamber-board, brought onto the SAME declarative path as
+# us-senate-2026-republican-seats / us-house-2026-republican-seats (2026-06-24):
+# `formula: seat_projection_sum` + `extraction: {group_by: us_governor}` collapse
+# the per-state markets to one P(R wins) per gubernatorial race, then the
+# Poisson-binomial folds in the holdover-governor geometry below. The score is
+# E[R governors] (NOT a 0..100 index); the /senate-board endpoint renders the
+# balance-of-power board from it — exactly like Senate/House.
+#
+# This replaces the bespoke `governor-board-snapshot` worker (which read the MAGA
+# cache + hardcoded the holdovers in code). Same numbers, one architecture.
+# Per-state lean (the 0..100 heat) stays in maga-governor-2026.
+
+id: us-governor-2026-republican-seats
+version: 10  # v10 (2026-09-30): add gemini venue — its "<State> Governor Winner - <Candidate>" legs classify via seat_race_extraction (world-knowledge party); coherent prices but zero volume → weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue prices the seat; gemini-only seats fold via the total_w=0 uniform fallback). ;  # v9 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v8 2026-09-18: seat_race_extraction prompt v1→v2 — office-aware so governor tier-3 finally works (v1 was senate-worded → returned 0 for every governor market, so governor was 100% patterns) + judges a named candidate's party from world knowledge. Lets IBKR governor candidate legs ("Hawaii Governor General Election — Josh Green") classify via the shared LLM. Requires: models register seat_race_extraction --prompt-version 2 + promote. ;  # v7 2026-09-18: add ibkr venue (IBKR ForecastTrader) — 202 per-candidate Governor general-election legs, keyword-matched + cross-venue merged by reduce_races. Mirrors maga-governor v10. ;  # v6 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v5 (2026-08-31): drop unused is_governor_race_2026 factor — seat_projection_sum scores via reduce_races (republican_on_yes + seat_race_extraction) and never reads is_governor_race; pure per-tick eval cost (now on gpt-4o-mini). Mirrors maga-governor v7. Byte-identical score.  # v4 (2026-08-30): max_markets 3000→8000 — pool 4759 > old cap truncated older venues; match maga-governor.  # v3 (2026-08-30): add kalshi + cycle:2026 + reduce_races — align with maga-governor. kalshi's per-state governorship legs (party from subject) flow in; cycle gate blocks -28; cross-venue merge like the MAGA-derived board (drop no-op robinhood).  # v2 (2026-08-19): add robinhood venue
+title: "US Governors 2026 — Projected Republican Governorships (#)"
+owner: pmi-team
+
+venues: [polymarket, forecastex, predictit, kalshi, ibkr, metaculus, manifold, gemini]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+max_markets: 8000
+
+selectors:
+  - type: keyword
+    terms:
+      - "Governor"
+      - "Gubernatorial"
+      - "Governorship"
+      - "2026 Governor"
+
+factors:
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+  - id: seat_race_extraction
+    type: extraction
+    prompt_ref: prompts/factors/seat-race-extraction-v2
+    weight: null
+
+extraction:
+  group_by: us_governor
+  sides: party
+  methods: [patterns, candidates, llm_fallback]
+  cycle: 2026   # gate kalshi's yearless -28 legs + keep only race_calendar's 36 contested states
+
+weighting:
+  liquidity:
+    method: none   # governorship *count* — each race counts once, no liquidity weight
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: seat_projection_sum
+  # Chamber geometry for the balance-of-power board. 50 governorships, 36 on the
+  # 2026 ballot + 14 holdover (governors elected 2023/2024/2025, not up in 2026):
+  #   R = 9 (LA, MS, IN, MO, MT, ND, UT, WV, VA)
+  #   D = 5 (KY, DE, NC, WA, NJ)   [2025 NJ/VA estimated; update on official results]
+  # No tie_break: governorships are 50 independent executives, not a chamber, so
+  # "R majority" is simply ≥26 of 50 (no VP). Correlation lower than the Senate's
+  # 0.5 — governors' races move together less than a single national chamber.
+  seat_projection:
+    total_seats: 50
+    majority_threshold: 26
+    holdover_r: 9
+    holdover_d: 5
+    correlation: 0.3
+
+publish:
+  cadence: every_2h
+  channels: [api]

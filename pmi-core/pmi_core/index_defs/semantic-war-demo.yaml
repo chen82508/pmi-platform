@@ -1,0 +1,73 @@
+# Semantic War Demo — exercises the vector-DB path end-to-end.
+#
+# Unlike polymarket-war-index (keyword + category selectors), this index selects
+# markets ONLY via a `type: semantic` anchor — cosine search over
+# vec_market_embeddings (active model: ollama/nomic-embed-text). It therefore
+# activates both vector consumers:
+#   • SemanticSelector  — discovers markets at/above min_similarity vs the anchor
+#   • Tier 0 pre-filter — the pipeline's lower cosine floor culls weak matches
+#                         before any factor LLM call
+# Requires `run-job embed-markets` to have populated vectors first; fail-open if
+# not (selects nothing rather than erroring). Factors are reused from the war
+# index (already bound to ollama/llama3.2 in core_factor_models), so precision is
+# double-guarded: even a loosely-matched market scores ~0 on the war factors.
+id: semantic-war-demo
+version: 4  # v4 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v3 (2026-08-19): add robinhood venue  # v2 (2026-06-12): cross-venue (CORR-3.12). A venue must ALSO be in PMI_EMBED_VENUES (and embedded) for SemanticSelector to see it.
+title: "Semantic War Demo (vector-selected)"
+owner: pmi-team
+
+# Real-money venues only (manifold play-money excluded from scoring; its
+# embeddings still exist, so adding it later is a one-line change here).
+venues: [robinhood, polymarket, kalshi, predictit, forecastex, gemini, metaculus, manifold]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+
+selectors:
+  - type: semantic
+    anchor: "Armed conflict, war, military escalation, missile strikes, and nuclear weapons between nation states"
+    min_similarity: 0.55
+
+factors:
+  - id: direction
+    type: ternary
+    prompt_ref: prompts/factors/direction-v1
+    weight: null
+  - id: directly_about_war
+    type: binary
+    prompt_ref: prompts/factors/directly_about_war-v1
+    weight: 30
+  - id: armed_conflict
+    type: binary
+    prompt_ref: prompts/factors/armed_conflict-v1
+    weight: 20
+  - id: state_actor
+    type: binary
+    prompt_ref: prompts/factors/state_actor-v1
+    weight: 15
+  - id: kinetic_action
+    type: binary
+    prompt_ref: prompts/factors/kinetic_action-v1
+    weight: 15
+  - id: near_term
+    type: binary
+    prompt_ref: prompts/factors/near_term-v1
+    weight: 10
+  - id: high_severity
+    type: binary
+    prompt_ref: prompts/factors/high_severity-v1
+    weight: 10
+
+weighting:
+  liquidity:
+    method: quantile
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: weighted_average_x_100
+
+publish:
+  cadence: every_2h
+  channels: [api]

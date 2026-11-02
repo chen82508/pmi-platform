@@ -1,0 +1,173 @@
+# pmi-workers supercronic crontab.
+#
+# Each line: <min> <hour> <dom> <month> <dow> <command>
+#
+# CORR-4.6 (cron → worker): schedule lines ENQUEUE onto the Postgres job queue
+# (`core_jobs`); the long-lived `pmi-worker` compose service claims + executes
+# (retry / heartbeat / dedupe live there). `pmi-workers enqueue` dedupes by
+# job name+args, so a beat landing while the previous tick is still
+# queued/running is a no-op instead of stacking — which also retires the old
+# trailing-`&` pattern (enqueue is a sub-second INSERT).
+#
+# One-shot manual in-process execution still works: `run-job <name>`.
+#
+# FOUR LANES (one claim-loop container each — see docker-compose.yml):
+#   default  → pmi-worker           on-demand `score` + the WS reeval-market fan-out
+#   snapshot → pmi-worker-snapshot  the */10 page snapshots below. On the default
+#                                   lane they queued 20-80 min behind ~700
+#                                   reeval-market/score jobs an hour, so every board
+#                                   flagged DELAYED while its scores were fresh
+#                                   (2026-10-20).
+#   batch    → pmi-worker-batch     hourly / reeval-drifted / tag-* whole-registry passes
+#   long     → pmi-worker-long      daily (embed + full re-score, ~2.5 h), tag-games,
+#                                   workflow — serialised on their own so they no
+#                                   longer park `hourly` for a morning.
+# History: with ONE lane and worker_concurrency=2 the two long passes held both
+# slots and every snapshot waited behind them (07-07); the batch split fixed
+# that, and the WS fan-out then crowded the snapshots out of `default` (10-20).
+#
+# The lane is NOT chosen here — each job declares it via `@register(...,
+# queue="batch")` and `enqueue` reads that. Keeping the choice at the call site
+# meant one producer forgetting the flag re-created the starvation; the rule
+# ("batch for anything that walks every index, default for anything a page
+# waits on") now lives with the job. `--queue` still overrides per-line.
+
+# Hourly: re-score every current PMI definition.
+0 * * * * pmi-workers enqueue hourly
+
+# Every 30 min (batch lane): (re)classify election markets into
+# core_market_race_tag — the membership source the us-{senate,house,governor} +
+# maga-{senate,house,governor} indexes select from (WHERE office/cycle, no
+# keyword-pool cap). Runs the keyword path's own classification, so newly
+# ingested race legs get tagged and picked up by the next score. Tag freshness
+# isn't latency-critical (new race markets are rare), and it's a full scan, so it
+# sits in the batch lane and offset from the :00 score / :10 board snapshots.
+15,45 * * * * pmi-workers enqueue tag-races
+
+# Every 5 min: rebuild core_market_priority — the P0 (in-use) / P1 (new listing)
+# id lists the ingest pollers read when INGEST_PRIORITY_ENABLED=true. PK lookups
+# only (never a core_markets scan); harmless while the flag is off, and the
+# table doubles as the measurement for docs/reports/priority_ingestion_blueprint.md.
+# --priority 10: a seconds-long job that must not queue behind board snapshots
+# (2026-10-13 it waited 20–85 min in the default lane at the default 100).
+*/5 * * * * pmi-workers enqueue refresh-market-priority --priority 10
+
+# Every 10 min: pre-compute MAGA, Senate, House, Governor boards into ts_page_cache.
+# maga-snapshot must run before governor-board-snapshot (governor reads maga cache).
+*/10 * * * * pmi-workers enqueue maga-snapshot
+*/10 * * * * pmi-workers enqueue senate-board-snapshot
+*/10 * * * * pmi-workers enqueue house-board-snapshot
+*/10 * * * * pmi-workers enqueue governor-board-snapshot
+*/10 * * * * pmi-workers enqueue gdp-board-snapshot
+
+# Every 10 min: pre-compute the war index (country→region→world) into ts_page_cache.
+*/10 * * * * pmi-workers enqueue war-snapshot
+
+# Every 10 min: pre-compute the Climate & Weather hub + boards into ts_page_cache.
+*/10 * * * * pmi-workers enqueue climate-snapshot
+
+# Every 10 min: pre-compute the markets boards into ts_page_cache (against the
+# main `pmi` DB). Same cadence as the other boards; live-computing it on the hot
+# path over ~2M markets times out, so the route serves this snapshot.
+# One line per markets-board vertical — the job takes the index_id, and an index
+# with no line here falls back to live compute on every single request (which is
+# what made /micah/sp500 a ~4s page while /micah/markets served in ~0.7s).
+*/10 * * * * pmi-workers enqueue markets-board-snapshot
+*/10 * * * * pmi-workers enqueue markets-board-snapshot --args '{"index_id": "sp500-bull-bear-index"}'
+
+# Every 10 min: pre-compute the esports match board + per-match detail into
+# ts_page_cache. esports was the one vertical that live-computed per request
+# (re-fold + trend scans, ~2.5s); it now serves from this snapshot like the rest.
+*/10 * * * * pmi-workers enqueue esports-snapshot
+
+# Every 10 min: pre-compute the Sports vertical boards (MLB / NFL) into
+# ts_page_cache, one cache row per sport. Serves /sports/{sport} like the rest.
+*/10 * * * * pmi-workers enqueue sports-snapshot
+
+# Every 10 min: pre-compute the LoL Worlds tournament board (structure + live odds
+# + resolved results) into ts_page_cache. Serves /worlds like the rest; its own
+# cache row per tournament id, separate from esports.
+*/10 * * * * pmi-workers enqueue worlds-snapshot
+
+# Every 10 min: pre-compute the homepage's landing data (per-index cards + movers +
+# stats) into ts_page_cache so "/" serves from one cached read instead of its
+# ~12-endpoint fan-out on every visit. Triggers pmi-web's /api/home-data (which
+# owns the assembly) and stores the JSON.
+*/10 * * * * pmi-workers enqueue home-snapshot
+
+# Every 15 min (batch lane): deterministically tag Kalshi NFL games from their
+# tickers (game winner + spread) — free, no LLM. Kalshi titles name only one team
+# so the LLM tagger (tag-games) can't pair them; the ticker has the matchup + date.
+# Frequent + cheap so new slates show without waiting on an LLM pass.
+*/15 * * * * pmi-workers enqueue tag-sports-kalshi
+
+# Every 15 min (batch lane): deterministically tag Gemini NFL/MLB games from their
+# instrumentSymbol (sport + teams + date) — free, no LLM. Gemini titles are
+# city-only so the LLM mis-labels sport AND teams; the symbol has both. Upserts
+# every run so it also heals the LLM's old mis-tags.
+*/15 * * * * pmi-workers enqueue tag-gemini
+
+# Every 15 min (batch lane): correct Polymarket MLB game tags from raw.slug
+# (mlb-mil-lad-2026-10-15) — the LLM reads both teams off the title but guesses the
+# date wrong, so games never fold with the Kalshi game. Deterministic, free; runs
+# after tag-games so freshly-tagged games get their real date next tick.
+*/15 * * * * pmi-workers enqueue tag-sports-polymarket
+
+# Hourly (batch lane): LLM-tag sports markets across the title-names-both-teams
+# venues (polymarket/manifold/metaculus). Incremental + cached (only untagged-at-
+# current-version markets are sent), so steady-state is cheap. Gemini is NOT here
+# (deterministic tag-gemini owns it).
+30 * * * * pmi-workers enqueue tag-games
+
+# Hourly: pre-compute the landing page's "Today's top movers" (24h Δ across the
+# four landing indexes' component markets) into ts_page_cache. Hourly is plenty
+# for a homepage list and keeps the per-market price-diff query off the hot path.
+0 * * * * pmi-workers enqueue movers-snapshot
+
+# Hourly: choose the landing page's cross-venue example (the one question two
+# exchanges price differently). Only the CHOICE is cached — /landing/venue-spread
+# re-reads the two markets' prices per request — so the pair search's O(n^2)
+# cosine join stays off the hot path without the card ever quoting a stale price.
+20 * * * * pmi-workers enqueue venue-spread-snapshot
+
+# Tier 3 (CORR-5.2): every 15 min, re-score only the indexes whose component
+# prices drifted >= PMI_DRIFT_THRESHOLD_PCT points since that index was last
+# scored. Cheap no-op when nothing drifted; keeps scores fresher than the
+# hourly full pass. The baseline is the score's own as_of, so acting on a drift
+# clears it — measuring against a fixed window instead kept one 10-point move
+# "drifted" for 24h and re-scored the whole registry on every beat.
+*/15 * * * * pmi-workers enqueue reeval-drifted
+
+# Daily 00:10 UTC: the deterministic war daily note (D6) — world + per-region
+# paragraphs and contract citations, templated from the enriched war:{cycle}
+# snapshot (no LLM). Once a day on purpose: it reads as a dated editorial
+# note, not a ticker. Batch lane; pure dict work.
+10 0 * * * pmi-workers enqueue war-summary
+
+# Daily 06:00 UTC: compute the Insights issue (chamber-spread lead, cross-venue
+# gap pairs, settling-this-week, every-reading) and freeze it under
+# insight:issue:{iso_week}. Batch lane — the gap-pairs self-join is the
+# venue-spread cost; daily suits a weekly editorial product.
+0 6 * * * pmi-workers enqueue insights-snapshot
+
+# Daily 10:00 UTC: heavier maintenance (placeholder — currently same as hourly).
+0 10 * * * pmi-workers enqueue daily
+
+# Weekly (Monday 13:00 UTC): email the weekly-report subscribers the index
+# digest. No-op (logged) when PMI_SMTP_HOST is unset or the list is empty.
+0 13 * * 1 pmi-workers enqueue weekly-report
+
+# Hourly: announce newly-launched indexes to the "new-index" subscribers
+# (hero "Get our updates" form). Cheap no-op when nothing new — detection is
+# "current defs with no core_index_announcements row".
+15 * * * * pmi-workers enqueue notify-new-indexes
+
+# Daily 11:00 UTC: prune ts_page_cache — latest-only keys keep newest 24 rows;
+# trend keys (war:{cycle} / maga:{cycle}) thin to last-per-day beyond 90 days.
+0 11 * * * pmi-workers enqueue page-cache-retention
+
+# --- OpenAI Batch API (CORR-5.3, half-price nightly recompute) --------------
+# Only meaningful when factors are bound to gpt-*/openai/* models AND
+# OPENAI_API_KEY is set; with an all-ollama registry both jobs no-op cleanly.
+0 2 * * * pmi-workers enqueue llm-batch-submit
+*/30 * * * * pmi-workers enqueue llm-batch-poll

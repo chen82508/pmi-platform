@@ -1,0 +1,157 @@
+# S&P 500 Bull/Bear Index — directional sentiment gauge for the S&P 500.
+#
+# Modeled 1:1 on btc-bull-bear-index (see that def's header for the full
+# rationale). A single 0..100 axis (NOT two indexes): 50 = balanced, > 50 = the
+# book leans BULLISH (probability mass sits on the index going up / above levels /
+# new highs), < 50 = leans BEARISH. It reuses the same war/BTC machinery: the
+# `direction` ternary (here `sp500_direction`) flips a market's price contribution
+# +/- depending on what a YES resolution *means* for the index level, and
+# `signed_weighted_average_x_100` folds direction x price x liquidity into 0..100.
+# See pmi_core/engine/aggregator.py::aggregate.
+#
+# Why this maps cleanly onto S&P 500 markets: the dominant real-money structure is
+# directional index-level bets (measured in core_markets, 2026-07-13) —
+#   * "Will the S&P 500 be above 6845.5 on Dec 31, 2026?"      (kalshi)      YES => up
+#   * "Will the S&P 500 be below 4000 on Dec 31, 2026?"        (kalshi)      YES => down
+#   * "Will the S&P 500 be between 7400 and 7599.99 ...?"       (kalshi)      range => neutral
+#   * "S&P 500 (SPX) Up or Down on July 1?"                     (polymarket)  YES => up
+#   * "Will S&P 500 (SPY) hit (LOW) $720 in June?"              (polymarket)  YES => down
+# `sp500_direction` reads that polarity; the two weighted factors gate relevancy
+# (is this really an S&P *price-level* market?) and magnitude (a substantive move,
+# not an intraday Up/Down coin-flip or a fraction-of-a-percent range bin).
+#
+# MONEYNESS: DISABLED (unlike btc v4+). BTC enables strike-aware moneyness
+# normalization to cancel the "above $X" strike-listing skew. The same skew exists
+# on the kalshi S&P ladders, BUT engine/moneyness.py's single-strike parser
+# (_STRIKE_RE) requires a literal `$`, and S&P kalshi strikes are bare index points
+# ("above 6845.5", "below 4000") — so it would parse NO strike for the single-sided
+# ladder and assign weight 0, dropping the bulk of the directional book (and the
+# strikeless polymarket "Up or Down" markets, the highest-volume S&P markets). Until
+# _STRIKE_RE is made `$`-optional (like _RANGE_RE already is), moneyness would break
+# more than it fixes here. Consequence: the ABSOLUTE level is a RELATIVE gauge only
+# — watch the time series for the sentiment signal, as BTC v3 did pre-moneyness.
+# The v5 untraded-market gate (min_volume_24h) still removes the stale-zero far-OTM
+# strikes that were the largest single source of false-bearish skew.
+
+id: sp500-bull-bear-index
+# v1 (2026-07-03, registered on the EC2 box): kalshi+forecastex only, max 250
+# markets, `spx_direction` factor ids. v2 (2026-07-25): the laptop-evolved def —
+# adds polymarket membership + exclude_terms, max_markets 1000, renames factors
+# to `sp500_*` (prompts/factors/sp500_*-v1). Bumped instead of edited in place:
+# v1's sha256 is locked into core_index_definitions (SCD2).
+version: 8  # v8 (2026-10-20): max_markets 1000 -> 5000 so the cap stops binding (the btc v12 fix).
+            # The selector saturated the cap on every tick (`selector.limit_saturated`: 10,000 semantic
+            # neighbours cut to 1,000), so WHICH S&P markets got in was the cosine rank's choice and the
+            # post-gate basket swung 151 -> 53 -> 218 -> 127 -> 138 -> 60 -> 131 across three days. On
+            # 2026-10-20 the partial-tick guard (engine/tick_guard.py) held every tick from 12:22 to
+            # 13:58 UTC (58-62 components vs a 143 baseline), so the markets board sat on its 11:58
+            # score and flagged DELAYED. Candidates are now the whole open pool (~900 S&P-titled markets
+            # plus their neighbours) and the sp500_price_relevance gate decides membership, not the
+            # rank. One-time cost: the previously-evicted candidates x 3 factors on the first tick.
+            # v7 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v6 (2026-09-18): make sp500_price_relevance a hard membership GATE
+# (see factor note). Root cause of the S&P contamination (foreign indices,
+# "added to the S&P 500" membership bets, the Dow, Treasury yields, CPI/macro
+# baskets, XRP): the broad keyword selector ("s&p", "spx" …) pulls in every
+# market that merely mentions the S&P, `sp500_price_relevance` correctly scored
+# them 0 (gpt-4o-mini, verified: 18/18 of the polluting members) — but as a
+# relevancy *weight* (70) that only DOWN-WEIGHTED them, so they stayed members
+# and polluted the component count, the driver strike labels and the reading.
+# Flipping it to gate:true excludes any market the LLM judges is not about the
+# index LEVEL, structurally, so new keyword false-positives can't recur.
+# (This is NOT the CORR-5.14 stub incident — the factors are correctly bound.)
+title: "S&P 500 Bull/Bear Index"
+owner: pmi-team
+
+# Priced, directional venues carrying real-money S&P 500 markets (measured
+# 2026-07-13: kalshi ~14k, forecastex ~544, polymarket ~434 non-play-money S&P
+# markets). Excludes the play-money venues and gemini (crypto-only, no S&P).
+# max_markets bounds the factor-LLM loop; id-DESC eviction scores the newest open
+# S&P markets. Kalshi dense strike ladders dominate the raw count, so the
+# min_volume_24h gate below matters more here than for most indexes.
+venues: [robinhood, kalshi, polymarket, forecastex, metaculus, manifold]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+# v8: must stay ABOVE the candidate pool the selector returns for this anchor — a
+# binding cap hands membership to the semantic rank (the selector logs
+# `selector.limit_saturated` for this index); raise it before that warning returns.
+max_markets: 5000
+# Untraded-market gate (mirrors btc v5): require real 24h volume. Dense kalshi
+# strike ladders are mostly untraded — those strikes carry a stale last_price that
+# reads as false conviction under the signed formula. Gating runs BEFORE
+# max_markets, so the cap fills with traded strikes, not untraded zeros.
+min_volume_24h: 1
+
+# Deterministic membership exclusion, applied at the selector (word-boundary regex,
+# BEFORE the max_markets cap) — cheaper and more reliable than asking the factor
+# LLM to zero them. Kalshi lists ~12 traded "absolute percentage change in the S&P
+# 500 ..." markets: these are two-sided VOLATILITY bets (YES resolves on a move of
+# X% in EITHER direction), so they carry no bull/bear signal. gemma3:4b stubbornly
+# misreads "absolute change" as "increase" and scores them +1 (measured 2026-07-13),
+# which would inject false bullishness — so drop them structurally here.
+exclude_terms:
+  - absolute percentage change
+
+selectors:
+  - type: keyword
+    terms:
+      - s&p 500
+      - s&p
+      - spx
+      - sp500
+  # Semantic discovery + Tier 0 cosine gate (pipeline._tier0_prefilter). Fail-open
+  # where embeddings are missing (kalshi/forecastex S&P may be unembedded), so
+  # keyword carries membership; the anchor culls keyword false-positives (e.g. a
+  # macro market that only mentions an "S&P 500 decline" as one recession trigger)
+  # for venues that ARE embedded (polymarket).
+  - type: semantic
+    anchor: "The S&P 500 stock index level moving up or down — bullish rallies and new all-time highs versus bearish declines, corrections and crashes, and whether the index closes above or below key point levels."
+    min_similarity: 0.6
+
+factors:
+  # The bull/bear axis. weight: null => does NOT participate in relevancy; it only
+  # sets the sign of each market's price contribution (mirrors war `direction`).
+  - id: sp500_direction
+    type: ternary
+    prompt_ref: prompts/factors/sp500_direction-v1
+    weight: null
+  # Membership GATE (v6): is the market's resolution directly a function of the
+  # S&P 500's index LEVEL? A 0 (or missing) eval excludes the market entirely, not
+  # just down-weights it (aggregator._passes_gate). This is what actually keeps
+  # S&P-adjacent-but-not-level markets out — relative-performance ranking,
+  # multi-condition macro baskets, index-membership add/remove bets, the Dow,
+  # Treasury yields, foreign S&P/TSX & S&P/BMV indices. Still weighted 70 for the
+  # markets that DO pass, so relevancy math is unchanged for real members.
+  - id: sp500_price_relevance
+    type: binary
+    gate: true
+    prompt_ref: prompts/factors/sp500_price_relevance-v1
+    weight: 70
+  # Magnitude gate: does YES represent a substantive move / decisive level, not an
+  # intraday "Up or Down" coin-flip or a fraction-of-a-percent range bin?
+  - id: sp500_major_move
+    type: binary
+    prompt_ref: prompts/factors/sp500_major_move-v1
+    weight: 30
+
+weighting:
+  liquidity:
+    method: quantile
+  # Disabled — see the MONEYNESS note in the header (S&P strikes are bare index
+  # points with no `$`, which the current single-strike parser can't read).
+  moneyness:
+    enabled: false
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  # Relax so a sparse tick still produces a score. Raise to >= 10 for a
+  # trustworthy public reading.
+  min_components: 1
+  # Centered bull/bear formula: price 0.50 -> neutral (50). See engine
+  # aggregator.py and the btc def header.
+  formula: signed_weighted_average_x_100
+
+publish:
+  cadence: every_2h
+  channels: [api]

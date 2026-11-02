@@ -1,0 +1,71 @@
+# MAGA — US Governor 2026 partisan lean (per-state heat, 0–100).
+#
+# The third MAGA chamber index (with maga-senate-2026 / maga-house-2026). Uses
+# the new `us_governor` extraction grammar (engine/extraction.py): one
+# governorship per state, so the state IS the entity — same key space as
+# us_state, distinct title grammar ("<State> gubernatorial/governor race",
+# "election for governor of <State>", forecastex "general election for governor").
+#
+# Same weighting contract as the Senate index: liquidity-weighted leaf, EQUAL
+# cross-race rollup → per-state heats in breakdown["entities"], national lean as
+# the top-line score. The governor map (routes/maga.py governor-board) reads the
+# per-state heats off the score row.
+
+id: maga-governor-2026
+version: 13  # v13 (2026-09-30): add gemini venue — its "<State> Governor Winner - <Candidate>" legs classify via seat_race_extraction (world-knowledge party); coherent prices but zero volume → weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue prices the seat; gemini-only seats fold via the total_w=0 uniform fallback). ;  # v12 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v11 2026-09-18: seat_race_extraction prompt v1→v2 (office-aware + world-knowledge candidate party) — mirrors us-governor v8; shared factor so the same v2 prompt serves the lean board. ;  # v10 2026-09-18: add ibkr venue (IBKR ForecastTrader) — 202 per-candidate Governor general-election legs, keyword-matched + cross-venue merged by reduce_races ;  # v9 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v8 (2026-08-30): max_markets 3000→8000 — pool 4759 > old cap; id-DESC was truncating older polymarket/predictit governor legs after kalshi joined. Raise so all venues select.  # v7 (2026-08-30): drop unused is_governor_race_2026 factor (entity_lean never consumes it — pure eval cost)  # v6 (2026-08-30): drop robinhood from venues — no per-state governor market (0 contributed)  # v5 (2026-08-30): cycle: 2026 gate — per-market election_cycle drops kalshi's yearless -28 legs, race_calendar keeps only the 36 states with a 2026 governor race  # v4 (2026-08-19): add robinhood venue
+title: "MAGA — US Governor 2026 (Republican Lean)"
+owner: danny
+
+# Venues carrying party-direct per-state governor markets (mirrors the Senate
+# scoping). kalshi added 2026-06-24 (Danny sign-off): its "Will the <party>
+# party win the governorship in <State>" rows ARE per-state P(party wins) — the
+# price is the party probability (a nominee may be appended as annotation).
+venues: [polymarket, forecastex, predictit, kalshi, ibkr, metaculus, manifold, gemini]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+max_markets: 8000
+
+selectors:
+  - type: keyword
+    terms:
+      - "Governor"
+      - "Gubernatorial"
+      - "Governorship"
+      - "2026 Governor"
+
+# entity_lean_mean derives membership from the extraction grammar + cycle gate,
+# NOT from a relevancy factor — so is_governor_race_2026 was evaluated every tick
+# (gpt-4o-mini cost) but never consumed. Dropped (v7). republican_on_yes stays as
+# the candidates-tier party hint; seat_race_extraction stays as the llm_fallback.
+factors:
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+  - id: seat_race_extraction
+    type: extraction
+    prompt_ref: prompts/factors/seat-race-extraction-v2
+    weight: null
+
+extraction:
+  group_by: us_governor
+  sides: party
+  methods: [patterns, candidates, llm_fallback]
+  cycle: 2026   # scope to the 2026 Governor cycle: drop non-2026 markets, gate entities to race_calendar's 34 contested states
+
+weighting:
+  liquidity:
+    method: quantile
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: entity_lean_mean
+  rollup:
+    cross_entity: equal
+
+publish:
+  cadence: every_2h
+  channels: [api]

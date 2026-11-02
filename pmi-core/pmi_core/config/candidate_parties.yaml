@@ -1,0 +1,22 @@
+# Curated candidate → party overrides for 2026 general-election legs whose venue
+# title carries no party and whose LLM-derived party hint is WRONG. Highest
+# precedence for a candidate-name leg (before the groupItemTitle tag, the
+# republican_on_yes factor and the extraction factor). "I" = independent /
+# third-party: the leg is dropped (neither price nor 1 − price is P(R)).
+#
+# Keyed by office → canonical state name (the extraction entity key; house
+# uses "<State>-<district>") → lower-cased candidate name as the venues print it
+# (list every spelling a venue uses — kalshi wrote "Todd Achilless").
+#
+# Source of truth is the exchanges' own party-aggregate legs ("Will Republicans
+# win the Senate race in New Jersey? - Justin Murphy") plus the candidates'
+# filings. Add a row only when a venue leg was observed mis-partied; the
+# systematic cross-venue audit is CORR-1.12 in TODO.md.
+senate:
+  New Jersey:
+    justin murphy: R            # gemini / ibkr / forecastex legs were tagged D (2026-10-12)
+  Idaho:
+    todd achilles: I            # independent — kalshi leg (priced 6–7%) was folded in as R
+    todd achilless: I           # kalshi's misspelling of the same candidate
+house: {}
+governor: {}

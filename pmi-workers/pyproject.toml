@@ -1,0 +1,59 @@
+[project]
+name = "pmi-workers"
+version = "0.1.0"
+description = "Scheduled + queued worker pool over pmi-core: supercronic enqueues, the Postgres-queue worker loop executes (CORR-4.6), durable workflows ride the same queue (CORR-8.1)."
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "pmi-core",
+    "pmi-notify",
+    "click>=8.1.7",
+    "structlog>=24.1.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+# (2026-06-11) The former `.[arq]` extra is gone: the Arq role is filled by
+# the Postgres queue in pmi_core.queue — no Redis. See README.
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.7",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+# Mirrors micah-job-executor's `run-job <name>` contract so supercronic
+# crontabs port across without change.
+run-job = "pmi_workers.runner:main"
+pmi-workers = "pmi_workers.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pmi_workers"]
+
+[tool.uv.sources]
+pmi-core = { path = "../pmi-core", editable = true }
+pmi-notify = { path = "../pmi-notify", editable = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "ASYNC"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# One-shot read of a small local batch file.
+"pmi_workers/jobs/llm_batch.py" = ["ASYNC240"]
+"tests/*" = ["N805"]

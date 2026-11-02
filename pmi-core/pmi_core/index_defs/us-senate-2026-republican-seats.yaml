@@ -1,0 +1,110 @@
+# US Senate 2026 — projected Republican seat *count* (#).
+#
+# Status: `formula: seat_projection_sum` IS implemented in
+# pmi_core/engine/aggregator.py::_seat_projection_aggregate. The score is the
+# expected Republican seat count E[R seats] (NOT a 0..100 index): component
+# markets collapse to one P(R wins) per state via seat_mapping.
+# extract_contested_seats, then the CORR-1.6 Poisson-binomial distribution
+# folds in the holdover geometry below. This is the exact path the
+# /senate-board endpoint uses, so the top-line score and the board agree.
+#
+# Pair with `us-senate-2026-republican-share.yaml` for the share variant.
+
+id: us-senate-2026-republican-seats
+version: 19  # v19 (2026-09-30): add gemini venue — 237 per-candidate Senate/Governor/House "Winner" legs surfaced since v7 (reverses v7's "gemini nothing"); classify via seat_race_extraction (world-knowledge party). Coherent ~1.0 per-race prices but zero volume → weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue prices the seat; gemini-only seats fold via the total_w=0 uniform fallback). ;  # v18 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v17 2026-09-18: seat_race_extraction prompt v1→v2 — office-aware (senate OR governor) + judges a named candidate's party from world knowledge instead of bailing to value=0 when the title omits it. Makes tier-3 (llm_fallback) a true universal extractor: candidate-leg venues with non-standard titles (e.g. IBKR "Wyoming Senate General Election — Harriet Hageman") classify via one shared LLM, no per-venue regex. Verified on 5 real ibkr titles. Requires: models register seat_race_extraction --prompt-version 2 + promote. ;  # v16 2026-09-18: add ibkr venue (IBKR ForecastTrader) — 202 per-candidate Senate general-election legs, keyword-matched + cross-venue merged by reduce_races. Mirrors maga-senate v11. ;  # v15 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v14 (2026-08-31): drop unused is_senate_race_2026 factor — seat_projection_sum scores via reduce_races (republican_on_yes + seat_race_extraction) and never reads is_senate_race; it was pure per-tick eval cost (now on gpt-4o-mini). Mirrors maga-senate v8. Byte-identical score.  # v13 (2026-08-30): max_markets 3000→10000 — pool 6193 > old cap truncated polymarket/predictit legs (id-DESC kept kalshi), matching maga-senate.  # v12 (2026-08-30): add kalshi + cycle:2026 + reduce_races. The v7 "kalshi has only candidate legs" reason is gone — the grammar now reads kalshi's party from the SUBJECT and the cycle gate blocks its yearless -28 legs; venues align with maga-senate (drop no-op robinhood); seat P(R) is cross-venue-merged like the MAGA-derived board.  # v11 (2026-08-19): add robinhood venue  # v10 (2026-06-13): national-swing correlation ρ=0.5 (single-factor Gaussian copula). The independent Poisson-binomial gave seat stdev ~2.0 — far too tight; real Senate forecasts carry ~4–6 because national swing moves races together. ρ=0.5 is a literature-standard swing prior (NOT calibrated to the direct control market: `calibrate-correlation` proved the ForecastEx ~54% R-control is UNREACHABLE at any ρ — the per-race markets imply E[R]=48.5 and correlation reshapes spread, not the mean, topping R-control at ~50%. The residual is a level disagreement between thin per-state markets and the heavily-traded direct market, tracked separately). Preserves every marginal, so E[R seats] (the score) is unchanged; only the board's control tails widen (R-control 31%→44%). v9 (CORR-1.8): declarative extraction stage — the `extraction: {group_by: us_state, ...}` block now drives seat_projection_sum instead of the grammar being hardcoded in the aggregator. Byte-identical scoring to v8 (us_state grammar + all three method tiers is exactly what v8 did implicitly); the block just makes the contract explicit and lets House/lean indexes reuse the same engine path with zero new code. v8 (2026-06-12): seat_race_extraction LLM fallback factor — markets no title pattern understands get an audited structured extraction ({state, party, race_type}); lowest precedence tier in seat_mapping (pattern > candidate > extraction), validated against the 50-state map, stub default = no-op until a CoreFactorModel is promoted for it. v7 (2026-06-12): cross-venue — venues grows to [polymarket, forecastex, predictit] (the venues with parseable per-state party-direct markets; kalshi has only margin-of-victory / candidate legs, gemini nothing) + max_markets 3000 over the 500 cap; seat_mapping picks one representative market per (state, party) by venue priority, polymarket first. v6 (2026-06-12): Alaska enters the contested set — seat_mapping now maps candidate-name markets (party from groupItemTitle tag, else the audited republican_on_yes factor), closing the 34/35 gap; board models all 100 seats. v5 (2026-06-12): tie_break R — the VP (R through Jan 2029) breaks a 50-50 tie, so GOP *controls* at 50; board switches to control semantics. v4 (2026-06-12): holdover corrected 30R/37D → 31R/34D against the actual Class I/III roster — the old split double-counted the OH/FL special seats and modeled 101 seats, locking D ≥ 51 and inflating P(D majority) to ~90%. v3 (ab03bd3): status header rewritten when seat_projection_sum landed. v2 (CORR-1.2): added aggregation.seat_projection chamber geometry
+title: "US Senate 2026 — Projected Republican Seats (#)"
+owner: pmi-team
+
+# Venues with parseable per-state party-direct senate markets (seat_mapping
+# _SEAT_RACE_PATTERNS). Deliberately NOT the share-variant's full list:
+# kalshi's senate markets are margin-of-victory brackets / candidate legs
+# with no per-seat P(party wins) reading, so including it would only add
+# ~1.3k markets of factor-eval cost with zero contested-seat yield.
+# ~770 unresolved keyword hits across these three as of 2026-06-12.
+venues: [polymarket, forecastex, predictit, kalshi, ibkr, metaculus, manifold, gemini]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+max_markets: 10000
+
+selectors:
+  - type: keyword
+    terms:
+      - "Senate"
+      - "Senator"
+      - "2026 Senate"
+      - "U.S. Senate"
+
+factors:
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+  # LLM extraction fallback (lowest precedence tier in seat_mapping): for
+  # titles no per-venue pattern understands, extract {state, party,
+  # race_type} as audited structure. With no CoreFactorModel promoted it
+  # resolves to the stub (= extracts nothing, zero behaviour change); promote
+  # a real model to activate:
+  #   pmi-core models register --factor seat_race_extraction \
+  #     --prompt-name factors/seat-race-extraction --prompt-version 2 \
+  #     --llm gpt-4o-mini-2024-07-18 --temperature 0.0
+  #   pmi-core models promote <id> --stage production
+  - id: seat_race_extraction
+    type: extraction
+    prompt_ref: prompts/factors/seat-race-extraction-v2
+    weight: null
+
+# CORR-1.8 — declarative extraction stage. Groups the selected markets into
+# one contested seat per US state (the Senate's Class-II seat), with three
+# precedence-ordered tiers: party-direct title patterns, then candidate-name
+# markets (party from the groupItemTitle tag or the republican_on_yes factor),
+# then the audited seat_race_extraction LLM factor. This is exactly what the
+# aggregator did implicitly before the block existed — declaring it just moves
+# the grammar choice out of engine code.
+extraction:
+  group_by: us_state
+  sides: party
+  methods: [patterns, candidates, llm_fallback]
+  cycle: 2026   # gate kalshi's yearless -28 legs + keep only race_calendar's 35 contested states
+
+weighting:
+  liquidity:
+    method: none   # seat *count* doesn't get liquidity-weighted: each seat counts once
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: seat_projection_sum
+  # CORR-1.2 — chamber geometry for the balance-of-power board.
+  # Senate = 100 seats = 35 on the 2026 ballot (33 Class II + the OH and FL
+  # Class III special elections for the Vance/Husted and Rubio/Moody seats) +
+  # 65 holdover. Holdover split, verified against the June-2026 roster:
+  #   R = 14 (Class I) + 19 (Class III) − 2 (OH/FL specials, on ballot) = 31
+  #   D = 19 (Class I) + 15 (Class III)                                 = 34
+  # Totals check out: 31 + 34 holdover + 22 R-held + 13 D-held on ballot
+  # = 53R/47D = the sitting Senate. Do NOT count OH/FL in holdover — their
+  # markets are in the contested set, so doing both models 101 seats.
+  # Alaska (Class II) has no party-direct market on any ingested venue, only
+  # candidate-name markets ("Will Dan Sullivan win the Alaska Senate race in
+  # 2026?"); since v6 seat_mapping maps those too (party from the
+  # groupItemTitle tag, else the republican_on_yes factor eval), so all 35
+  # ballot seats are contested and the board models the full 100.
+  seat_projection:
+    total_seats: 100
+    majority_threshold: 51
+    holdover_r: 31
+    holdover_d: 34
+    # The 120th Congress is seated Jan 2027; the VP (Republican through Jan
+    # 2029) breaks a 50-50 tie, so the GOP *controls* the chamber at 50 seats
+    # while the Dems need 51 outright. Drives p_r_control / p_d_control.
+    tie_break: R
+    # National-swing correlation across contested races (single-factor Gaussian
+    # copula). Swing prior, not a direct-market calibration — see the version
+    # note. Re-fit with `pmi-core calibrate-correlation` if a reachable direct
+    # control market becomes the anchor.
+    correlation: 0.5
+
+publish:
+  cadence: every_2h
+  channels: [api]

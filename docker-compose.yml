@@ -1,0 +1,195 @@
+# PMI Platform — local / single-host stack.
+#
+#   docker compose --profile pmi up -d          # db + mlflow + api + mcp + workers
+#   docker compose --profile pmi --profile web up -d   # + dashboard (prod build)
+#   docker compose --profile ollama up -d       # optional local LLM / embeddings
+#
+# Python services bind-mount their package source so a `restart` picks up code
+# changes without an image rebuild.
+
+x-worker: &worker
+  build:
+    context: ./pmi-workers
+  image: pmi-workers:dev
+  profiles: [pmi]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: 50m, max-file: "5" }
+  depends_on:
+    postgres: { condition: service_healthy }
+    mlflow: { condition: service_healthy }
+  env_file: [.env]
+  environment: &worker-env
+    PMI_DB_HOST: postgres
+    PMI_MLFLOW_TRACKING_URI: http://mlflow:5000
+    PMI_OLLAMA_BASE_URL: http://ollama:11434/v1
+  volumes:
+    - ./pmi-core/pmi_core:/app/pmi_core:ro
+    - ./pmi-workers/pmi_workers:/app/pmi_workers:ro
+    - ./pmi-workers/cron:/app/cron:ro
+    - ./pmi-notify/pmi_notify:/app/pmi_notify:ro
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pmi-postgres
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PMI_PG_SHARED_BUFFERS:-512MB}
+      - -c
+      - work_mem=${PMI_PG_WORK_MEM:-16MB}
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    environment:
+      POSTGRES_USER: ${PMI_DB_USER:-pmi}
+      POSTGRES_PASSWORD: ${PMI_DB_PASSWORD:-pmi}
+      POSTGRES_DB: ${PMI_DB_NAME:-pmi}
+    # Bound to loopback: only the containers on this host talk to the DB.
+    ports: ["127.0.0.1:${PMI_DB_HOST_PORT:-5433}:5432"]
+    volumes:
+      - pmi-pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PMI_DB_USER:-pmi} -d ${PMI_DB_NAME:-pmi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mlflow:
+    build: { context: ./mlflow }
+    image: pmi-mlflow:dev
+    container_name: pmi-mlflow
+    profiles: [pmi]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql+psycopg2://${PMI_DB_USER:-pmi}:${PMI_DB_PASSWORD:-pmi}@postgres:5432/mlflow
+      MLFLOW_ARTIFACTS_DESTINATION: /mlartifacts
+      MLFLOW_PORT: "5000"
+    ports: ["127.0.0.1:${MLFLOW_PORT:-5500}:5000"]
+    volumes: [pmi-mlartifacts:/mlartifacts]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # One-shot CLI container: migrate / seed / score / models / eval.
+  pmi-core:
+    build: { context: ./pmi-core }
+    image: pmi-core:dev
+    container_name: pmi-core
+    profiles: [pmi]
+    depends_on:
+      postgres: { condition: service_healthy }
+      mlflow: { condition: service_healthy }
+    env_file: [.env]
+    environment:
+      PMI_DB_HOST: postgres
+      PMI_MLFLOW_TRACKING_URI: http://mlflow:5000
+      PMI_OLLAMA_BASE_URL: http://ollama:11434/v1
+    volumes:
+      - ./pmi-core/pmi_core:/app/pmi_core:ro
+      - ./pmi-core/alembic.ini:/app/alembic.ini:ro
+      - ./pmi-core/alembic:/app/alembic:ro
+      - ./pmi-core/tests:/app/tests:ro
+      - ./pmi-demo/fixtures:/app/fixtures:ro
+
+  pmi-api:
+    build: { context: ./pmi-api }
+    image: pmi-api:dev
+    container_name: pmi-api
+    profiles: [pmi]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file: [.env]
+    environment:
+      PMI_DB_HOST: postgres
+      PMI_MLFLOW_TRACKING_URI: http://mlflow:5000
+      PMI_OLLAMA_BASE_URL: http://ollama:11434/v1
+    ports: ["${PMI_API_HOST_PORT:-8001}:8000"]
+    volumes:
+      - ./pmi-core/pmi_core:/app/pmi_core:ro
+      - ./pmi-api/pmi_api:/app/pmi_api:ro
+      - ./pmi-notify/pmi_notify:/app/pmi_notify:ro
+
+  # MCP server for agents (Claude / Cursor / the /ask endpoint). Internal only.
+  pmi-mcp:
+    build: { context: ./pmi-mcp }
+    image: pmi-mcp:dev
+    container_name: pmi-mcp
+    profiles: [pmi]
+    restart: unless-stopped
+    depends_on:
+      pmi-api: { condition: service_started }
+    env_file: [.env]
+    environment:
+      PMI_API_URL: http://pmi-api:8000
+    volumes: [./pmi-mcp/pmi_mcp:/app/pmi_mcp:ro]
+
+  # supercronic: cron beats only *enqueue* jobs into the Postgres queue.
+  pmi-workers:
+    <<: *worker
+    container_name: pmi-workers
+
+  # Queue consumers — one container per lane. A lane with no consumer never
+  # runs its jobs, so all four must be up.
+  pmi-worker:
+    <<: *worker
+    container_name: pmi-worker
+    command: [pmi-workers, worker, --queue, default]
+  pmi-worker-batch:
+    <<: *worker
+    container_name: pmi-worker-batch
+    command: [pmi-workers, worker, --queue, batch]
+    environment:
+      <<: *worker-env
+      PMI_WORKER_CONCURRENCY: 1
+  pmi-worker-snapshot:
+    <<: *worker
+    container_name: pmi-worker-snapshot
+    command: [pmi-workers, worker, --queue, snapshot]
+    environment:
+      <<: *worker-env
+      PMI_WORKER_CONCURRENCY: 3
+  pmi-worker-long:
+    <<: *worker
+    container_name: pmi-worker-long
+    command: [pmi-workers, worker, --queue, long]
+    environment:
+      <<: *worker-env
+      PMI_WORKER_CONCURRENCY: 1
+
+  pmi-web:
+    build: { context: ./pmi-web, target: prod }
+    image: pmi-web:prod
+    container_name: pmi-web
+    profiles: [web]
+    restart: unless-stopped
+    depends_on:
+      pmi-api: { condition: service_started }
+    env_file: [.env]
+    environment:
+      PMI_API_URL: http://pmi-api:8000
+    ports: ["${PMI_WEB_PORT:-3000}:3000"]
+
+  ollama:
+    image: ollama/ollama:0.40.12
+    container_name: pmi-ollama
+    profiles: [ollama]
+    restart: unless-stopped
+    ports: ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+    environment:
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
+    volumes: [ollama-models:/root/.ollama]
+
+volumes:
+  pmi-pgdata:
+  pmi-mlartifacts:
+  ollama-models:

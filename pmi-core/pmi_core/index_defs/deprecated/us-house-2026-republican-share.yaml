@@ -1,0 +1,58 @@
+# US House 2026 — projected Republican seat *share* (%).
+#
+# P0 status: runs on the current aggregator; score ≈ average P(R wins YES) over
+# single-district 2026 house markets that match both gating factors. See the
+# senate-share variant for the same notes about CORR-2.x polarity-aware
+# aggregation.
+
+id: us-house-2026-republican-share
+version: 5  # v5 (2026-06-14): drop the venue restriction — membership is relevance + the extraction stage, not a venue whitelist. Same rationale as senate-share v5: all real-money venues join; only markets that classify into a (us_house_district, party) observation contribute, so cross-venue noise that keyword-matches "house" falls out at extraction. Play-money excluded by default (no include_play_money) — its count would swamp the district set; if opted in, is_play_money still keeps it out of the liquidity weight. The 0.78 semantic discovery bar still gates (a 0.7 cut matched 15k ids), and the Tier 0 floor + survivor cap bound the factor LLM loop across the real-money cross-venue union. v4 superseded same-day (had wrongly admitted manifold). v3 (2026-06-12): semantic anchor (T3) — activates the Tier 0 cosine floor that culls keyword noise ("House of the Dragon", non-election "Congress" hits) before the factor LLM loop; discovery bar 0.78 (§4's high bar): a first cut at 0.7 matched 15,096 ids and saturated even the 12,000 cap (in-scope kalshi district margin/vote markets are all semantically "house election") — the anchor must gate, not recruit. v2 (2026-06-12): cross-venue (CORR-3.12) + max_markets raised above the cross-venue hit count.
+title: "US House 2026 — Republican Seat Share (%)"
+owner: pmi-team
+
+# No `venues:` — all real-money venues (play-money excluded by default). The
+# extraction stage (classify into us_house_district, party) is the real
+# membership filter. kalshi alone has ~6,700 district margin / vote-count
+# markets; the cap must clear the cross-venue keyword union so id-DESC truncation
+# never evicts a parseable market before Tier 0 + extraction run.
+max_markets: 25000
+
+selectors:
+  - type: keyword
+    terms:
+      - "House"
+      - "Representative"
+      - "Congress"
+      - "2026 House"
+      - "U.S. House"
+  - type: category
+    polymarket_tag: "politics"
+  - type: semantic
+    anchor: "2026 United States House of Representatives elections — which party's candidate wins a congressional district or which party controls the House"
+    min_similarity: 0.78
+
+factors:
+  - id: is_house_race_2026
+    type: binary
+    prompt_ref: prompts/factors/is-house-race-2026-v1
+    weight: 60
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+
+weighting:
+  liquidity:
+    method: quantile
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: weighted_average_x_100
+
+publish:
+  cadence: every_2h
+  channels: [api]

@@ -1,0 +1,402 @@
+# Global War Index 2026 — geographic war PMI (contracts → country → region → world).
+#
+# Supersedes the flat `polymarket-war-index.yaml` (now deprecated): same 7 war
+# factors + selectors, but with the declarative `group_by: country` extraction
+# stage and the `geo_weighted_mean` formula that ports Micah's four-layer war
+# index onto the new platform (W5).
+#
+#   L2 country — directed relevancy×liquidity weighted PMI per country
+#                (= legacy IndexCalculator.calculate_country_index)
+#   L3 region  — 65% GDP / 35% population mean over the region's FULL roster,
+#                absent countries scored 0 (legacy include_zero_pmi=True)
+#   L4 world   — GDP/pop mean over the regions that scored > 0 (legacy world
+#                include_zero_pmi=False); `score` is the world PMI.
+#
+# Per-country / per-region heats land in `ts_index_scores.breakdown` so the
+# war_snapshot job + /war/* API read the whole choropleth off one score row.
+
+id: war-index-2026
+version: 23  # v23 (2026-10-26): war_direction prompt turmoil-direction-v1 → v2 (no IR/weight change). v1 asked for the value BEFORE the reasoning, so gpt-4o-mini committed to a sign first and then wrote a rationale that contradicted it (Kalshi "Will France declare a state of emergency" stored -1 with "suggests an increase in turmoil" → its 3% price scored as 97% calm-side, France 34). v2 puts reasoning first and states the rules v1 left implicit: declaring an emergency is +1 (judge what YES reveals, not what the measure aims at); a ceasefire ENDING / cancelled is +1; a war-settling concession (ceding territory, recognizing sovereignty) is -1; when the sign depends on facts not in the market (who takes a town, peacekeeping vs combat) return 0 — a wrong sign is worse than none; sanctions / tariffs are 0. Regression on gpt-4o-mini vs the stored v1 judgments: France 20/20 +1; 197 scored war contracts ×2 runs 0 disagreements, 9 changes (3 wrong signs fixed: France, Israel×Hamas ceasefire cancelled, Israel×Iran ceasefire ends; 6 ambiguous → 0); 100 sampled v1-zero markets gain 0 directions. Only war_direction re-evaluates (~15k calls, one-time).  # v22 (2026-10-19): redefine relevancy from armed WAR to overall COUNTRY TURMOIL / instability (owner-confirmed scope). The on-topic gate factor war_directly_about_war is repointed directly_about_war-v2 → about_turmoil-v1 (now fires for armed conflict, civil unrest / protests / riots, martial law / state of emergency / state of siege, coup / insurrection, terrorism, political crisis incl. a government collapsing or a leader ousted early, and severe economic crisis — but NOT routine elections / normal transitions / diplomacy logistics / sports / ordinary economic data) and reweighted 30→50 so ANY turmoil market clears the 0.5 min_entity_relevancy floor on the gate alone; the other five relevancy factors rescale 70→50 keeping their war-specific prompts (armed_conflict / kinetic_action / high_severity only add weight for violent / severe turmoil, so a civil war still outranks a non-violent political crisis). The war_direction factor is ALSO repointed direction-v2 → turmoil-direction-v1: geo_weighted_mean drops any market with direction==0 BEFORE relevancy is consulted, and direction-v2 returns 0 for non-armed-conflict markets, so without this a turmoil market (martial law, economic crisis, a leader ousted) would still be excluded regardless of the gate. turmoil-direction gives +1 (more turmoil) / -1 (less turmoil) / 0 (not a turmoil market). Prompts unchanged on the other five relevancy factors → eval cache reuses their judgments; only about_turmoil and war_direction re-evaluate (~2 factors × ~15k candidates, one-time). Trigger: France's state-of-siege / state-of-emergency markets ($25–32k 24h vol) were excluded because the war-only gate scored them 0. Gate validated on representative markets (France crisis IN; routine election / sports / normal econ OUT).  # v21 (2026-10-12): per-country relevancy floor — rollup.min_entity_relevancy 0.5. A country's reading was being decided by a single low-relevancy contract once its on-topic contracts had no 24h volume (Turkey 92 on a 0.15-relevancy "lift CAATSA sanctions" market read inversely; Sudan 91 likewise). Below the floor the leaf falls back to a relevancy-only mean over the real-money set (standing quotes count), and is unscored if even that lacks the mass. No selector/factor/prompt change → eval cache reuses every judgment, $0 re-billing.  # v20 (2026-09-18): drop CategorySelector (polymarket_tag geopolitics) — measured 0 marginal members (237 members: 176 keyword + 61 semantic + 0 category); category was pure dead weight forcing a seq scan on unindexed core_markets.category every score. Same fix as the 6 election defs. See 2026-09-18 note.  # v19 (2026-09-06): exclude_terms += winner/advances/rainbow six/r6/fiba/cricket/rugby — strip head-to-head sports & esports brackets that leaked into war-country (FIBA "Guam vs New Zealand Winner?", R6 Siege, soccer "…advances"); verified 0-collision with real war titles. See exclude_terms note.  # v18 (2026-08-08): display rename only — title "War Index 2026" → "Global War
+# Index 2026", matching the site-wide rename of the vertical. No selector/factor/weight
+# change, so the eval cache reuses every judgment — no LLM re-billing. Bumped because
+# load_index_def hashes the whole file and the SCD Type 2 guardrail trips on any sha change.
+# version: 17  # v17 (2026-07-29): comment-only — no IR change. Commit 75bc8d98 corrected a
+# stale note (factors are gpt-4o-mini, not local gemma) in place on v16, which changed the
+# raw-YAML sha256 and tripped the SCD Type 2 guardrail (load_index_def hashes the whole file,
+# comments included). Bumped to satisfy the contract; factors/prompts/models are byte-identical
+# so the index-independent eval cache reuses every judgment — no LLM re-billing.
+# version: 16  # v16 (2026-07-07): coverage — max_markets 8000→15000. The 8000 cap was
+# saturating (selector.limit_saturated): ~20k semantic candidates cut to 8000 by cosine
+# rank dropped genuine war markets in the tail — e.g. only 25 of 208 "China invade Taiwan"
+# markets reached the breakdown, splitting one question across the cap boundary
+# ("by end of 2026" in, "by year's end" out). 15000 admits the war-relevant tail; the
+# Tier 0 cosine floor still culls off-topic noise, so precision holds.
+# version: 15  # v15 (2026-07-03): venue quality — play_money_weight 0.5 (Manifold play-money
+# heat contribution halved vs real-money depth 0.9-1.5; membership unchanged, 89 countries stay)
+# version: 13  # v13 (2026-07-01): selection PRECISION — add exclude_terms to strip
+            # sports/esports noise. v12's broad keyword ("strike"→Counter-Strike,
+            # "invasion"→Dota) + semantic 0.55 (war shares attack/shots/invasion
+            # vocab with sports in embedding space) flooded the 8000 cap with ~66%
+            # sports/esports markets, starving real country-war markets → coverage
+            # stuck at ~11. exclude_terms drops the SPORT token at selection (both
+            # keyword+semantic paths) so the cap fills with genuine war markets;
+            # lifts coverage AND precision (drops baseball/esports false countries).
+# --- v12 (2026-06-29) notes retained below ---
+# version: 12  # v12 (2026-06-29): maximise breadth toward legacy ~97 countries —
+            # (1) +more geopolitics keywords (election/terrorism/coup/secession/
+            # militia/rebel/sanctions…), (2) semantic threshold 0.65→0.55,
+            # (3) include_play_money: true (Manifold ON). All factors local gemma;
+            # the big eval is a slow one-time backfill, then cached.
+            # v11 (2026-06-29): broaden to a geopolitical-INSTABILITY index to
+            # match the legacy ~97-country breadth — add destabilisation keywords
+            # (inflation/protests/unrest/coup/currency-crisis/regime change …) AND
+            # relax the directly_about_war hard gate to a soft relevancy factor
+            # (gate:false) so those markets are down-weighted, not excluded. The
+            # legacy "war index" was always broader than armed conflict; this aligns
+            # the new one. play-money still OFF. (All 8 factors now local gemma; the
+            # stub-cache fix means previously-stubbed markets re-evaluate for real.)
+            # v10 (2026-06-28): broaden the war keyword selector (10 → ~57 terms:
+            # attack/invade/bomb/drone/nuclear/nato/sanctions + named actors
+            # hamas/hezbollah/houthi/taliban/isis/wagner …) to lift REAL-money
+            # coverage — kalshi/polymarket are huge but war is a thin slice and the
+            # narrow set missed forecastex entirely (0 → 175). include_play_money
+            # reverted to false (v9's Manifold made full LLM eval intractable).
+            # v9 (2026-06-28): include_play_money — add Manifold (~7k war-keyword
+            # markets) to broaden per-country market mass toward the legacy's
+            # 9-source breadth (metaculus is 403-blocked → not ingested, so
+            # play-money = Manifold here). Pairs with the multi-country attribution
+            # code change (geo.match_countries) that recovers bilateral war markets.
+            # v8 (2026-06-27): restore [patterns, llm_fallback] + add a meeting-venue
+            # guard to the patterns matcher (engine/geo.match_country). v7's
+            # [llm_fallback]-only scored NULL: gpt-4o-mini country_extraction returns
+            # value=0 for ALL 543 markets (the LLM tier never actually classifies —
+            # patterns has carried 100% of coverage all along). So coverage MUST keep
+            # patterns. The diplomacy "Trump & Putin meet in X" venue noise (Australia
+            # ~99) — which the gate can't catch (war-adjacent, directly_about_war=1) —
+            # is instead dropped deterministically: match_country now returns None when
+            # the title is a leaders' meeting/summit (the country is a venue, not a war
+            # party). See WAR-INDEX-COMPARISON.md.
+            # v7 (2026-06-27): drop patterns (REVERTED — extraction LLM all-0).
+            # v6 (2026-06-27): tighten the GATE prompt. The v5 gate used the
+            # unchanged directly_about_war-v1 (no guidance on diplomacy), so
+            # gemma3:4b judged "Trump & Putin meet in X" inconsistently and the
+            # family leaked through. v6 gates on war_directly_about_war →
+            # directly_about_war-v2, which explicitly says leaders' meeting/summit
+            # logistics are NOT directly about armed conflict → 0 → gated out.
+            # Prompt-only, $0 (gemma3:4b); if 4b still flip-flops, bind this gate
+            # factor to gpt-4o-mini (a clean on-topic yes/no). See WAR-INDEX-COMPARISON.md.
+            # v5 (2026-06-26): mark directly_about_war as a membership `gate` — a
+            # market with directly_about_war=0 is excluded outright, not just
+            # down-weighted. Removes esports ("Counter-Strike … De France") and
+            # diplomacy ("Trump & Putin meet in X") that the model correctly tags
+            # not-about-war (directly_about_war=0) yet survived on a soft relevancy
+            # mean (~0.65) because other factors fire on "strike"/"Putin". Model-
+            # agnostic + $0 (local gemma3:4b already returns 0). Supersedes the
+            # direction-v2 attempt (which neither gemma3:4b nor gpt-4o-mini applied
+            # consistently). country_extraction stays on gpt-4o-mini (coverage).
+            # v4 (2026-06-26): tighten the direction factor (direction-v1 → -v2) to
+            # return 0 (neutral → excluded) for non-armed-conflict markets —
+            # diplomatic meeting/summit logistics ("Trump & Putin meet in X") and
+            # sports/esports ("Counter-Strike … De France"). In geo_weighted_mean
+            # direction==0 drops the market entirely, so this removes the noise that
+            # the eager patterns matcher otherwise crowned countries with (Australia
+            # 99.86, France 70). Isolated via a war-only `war_direction` factor so
+            # the flat polymarket-war-index keeps direction-v1. v3 kept [patterns,
+            # llm_fallback] after v2's [llm_fallback]-only scored NULL (country_extraction
+            # is stub-backed, not a real LLM — patterns carries coverage). See WAR-INDEX-COMPARISON.md.
+title: "Global War Index 2026"
+owner: pmi-team
+
+# No `venues:` — membership is relevance across all REAL-money venues. v10 keeps
+# play-money OFF: Manifold carries ~4k war markets whose full LLM factor eval
+# swamped the T4 + OpenAI rate limit (v9 ran 2h with 19k 429s). The broadened
+# keyword set below first maximises REAL-money coverage (incl forecastex, which
+# the narrow set missed entirely) — tractable to score; revisit Manifold for
+# extra breadth via the Batch API once real-money coverage is measured.
+include_play_money: true   # v12: Manifold ON — the only path to legacy ~97-country breadth (real-money venues lack that geopolitics coverage). NOTE: the 8 production factors are still bound to gpt-4o-mini (OpenAI) in core_factor_models — NOT local gemma — so this large eval DOES consume OpenAI quota (cf. the v9 429 storm above); it's a slow one-time backfill mitigated by the eval cache + nightly Batch API, then cached.
+max_markets: 15000
+
+# v13: negative keyword filter — drop sports/esports markets that the war keyword
+# selector ("strike"→Counter-Strike) and semantic anchor (war shares aggressive
+# vocab with sports/esports) otherwise pull in, consuming the cap. Word-boundary
+# (\m..\M) matched, same as `terms`. Exclude the SPORT token, never a war token.
+exclude_terms:
+  # esports
+  - counter-strike
+  - counterstrike
+  - csgo
+  - cs2
+  - dota
+  - valorant
+  - overwatch
+  - "league of legends"
+  - "rocket league"
+  - esports
+  - "bo3"
+  - "bo5"
+  # football / soccer
+  - fifa
+  - "world cup"
+  - uefa
+  - "premier league"
+  - "la liga"
+  - bundesliga
+  - "serie a"
+  - "champions league"
+  - "ballon"
+  # us sports
+  - nba
+  - wnba
+  - nfl
+  - mlb
+  - nhl
+  - "super bowl"
+  - touchdown
+  - rebounds
+  - "home run"
+  - homer
+  - strikeout
+  - inning
+  # tennis / golf
+  - wimbledon
+  - "grand slam"
+  - "set 1"
+  - "set 2"
+  - "games o/u"
+  # generic sports-betting / prop markers
+  - playoff
+  - playoffs
+  - "shots on target"
+  - goals
+  - assists
+  - "o/u"
+  - "moneyline"
+  - "spread:"
+  - "4th quarter"
+  - "3rd quarter"
+  - "1st half"
+  - "2nd half"
+  - "penalty shootout"
+  # v19 (2026-09-06): head-to-head sports/esports brackets leaked into war-country
+  # via the semantic path (no war keyword) and via incidental war-words (R6 "Siege",
+  # "Nuclear <team>") — e.g. "Guam vs New Zealand Winner?" (FIBA) became a fake
+  # New Zealand war. These tokens are title-based and verified 0-collision with real
+  # war markets ("advances" 0 hits; "winner" hits only esports in the war set; war
+  # markets phrase it "win the war", not "winner"). "vs" itself is NOT excluded — it
+  # appears in 1000+ legit war titles.
+  - winner
+  - advances
+  - "rainbow six"
+  - r6
+  - fiba
+  - cricket
+  - rugby
+
+selectors:
+  - type: keyword
+    terms:
+      # core (v8 set)
+      - war
+      - invasion
+      - conflict
+      - ceasefire
+      - troop
+      - "armed forces"
+      - military
+      - missile
+      - strike
+      - "nuclear weapon"
+      # v10 broadening — kalshi/polymarket are huge but war is a thin slice; the
+      # narrow 10-term set also missed forecastex entirely (0 → 175). These add
+      # closer war vocabulary + high-precision named armed actors. Word-boundary
+      # matching (\m..\M) + the relevancy factors + the directly_about_war gate
+      # keep precision; recall is what we're after here.
+      - attack
+      - invade
+      - bomb
+      - airstrike
+      - "air strike"
+      - drone
+      - nuclear
+      - warhead
+      - "ballistic missile"
+      - icbm
+      - annex
+      - annexation
+      - nato
+      - sanctions
+      - embargo
+      - hostage
+      - hamas
+      - hezbollah
+      - houthi
+      - houthis
+      - taliban
+      - isis
+      - "islamic state"
+      - wagner
+      - coup
+      - genocide
+      - "war crime"
+      - "war crimes"
+      - shelling
+      - artillery
+      - insurgency
+      - insurgent
+      - militant
+      - escalation
+      - mobilization
+      - siege
+      - truce
+      - armistice
+      - "peace deal"
+      - "peace talks"
+      - peacekeeping
+      - "proxy war"
+      - "civil war"
+      - "world war"
+      - "regime change"
+      - retaliation
+      - "no-fly zone"
+      # v11 instability broadening — the legacy index covered ~97 countries
+      # because it counted political/economic destabilisation (not just armed
+      # conflict): protests, unrest, coups, currency crises. Adding these +
+      # relaxing the directly_about_war gate (below) recovers that breadth.
+      - inflation
+      - protests
+      - protest
+      - unrest
+      - riots
+      - uprising
+      - "civil unrest"
+      - "currency crisis"
+      - devaluation
+      - default
+      - "economic crisis"
+      - "economic collapse"
+      - "political crisis"
+      - instability
+      - "regime change"
+      - "state of emergency"
+      - martial law
+      - "imf bailout"
+      # v12 further geopolitics breadth (toward legacy ~97-country coverage)
+      - election
+      - referendum
+      - terrorism
+      - terrorist
+      - assassination
+      - blockade
+      - tariff
+      - "trade war"
+      - cyberattack
+      - espionage
+      - secession
+      - independence
+      - militia
+      - rebel
+      - rebels
+      - separatist
+      - "ethnic cleansing"
+      - "border dispute"
+      - territorial
+      - sovereignty
+      - occupation
+      - kidnap
+      - "political prisoner"
+      - crackdown
+      - dictatorship
+      - junta
+  - type: semantic
+    anchor: "Armed conflict, war, military escalation, missile strikes, and nuclear weapons between nation states"
+    min_similarity: 0.55   # v12: lowered 0.65→0.55 to admit more semantically-near markets
+
+factors:
+  # war_direction has its own factor-model row; the aggregator finds the
+  # ternary factor by TYPE, so the id is free. geo_weighted_mean drops a
+  # direction==0 market BEFORE relevancy, so 0 means "not counted".
+  - id: war_direction
+    type: ternary
+    prompt_ref: prompts/factors/turmoil-direction-v2
+    weight: null              # +1 = more turmoil / -1 = less turmoil / 0 = no direction (dropped)
+  # war_directly_about_war — the primary on-topic factor (id kept for lineage /
+  # registry continuity; semantics are now "about country turmoil", see about_turmoil-v1).
+  # v22 repoints it directly_about_war-v2 → about_turmoil-v1: it fires for armed
+  # conflict AND civil unrest / martial law / coup / terrorism / political crisis /
+  # severe economic crisis, while still returning 0 for diplomacy-logistics
+  # (Trump-Putin "meet in X"), routine elections, and sports. Needs its own
+  # factor-model row (register + promote the new prompt).
+  - id: war_directly_about_war
+    type: binary
+    prompt_ref: prompts/factors/about_turmoil-v1   # v22: war → country-turmoil gate
+    weight: 50                                      # v22: 30→50 — the gate alone clears the 0.5 relevancy floor for any turmoil market (violent or not)
+    gate: false               # v11: relaxed from a hard gate to a soft relevancy
+                              # factor. The legacy index never hard-excluded non-
+                              # armed-conflict markets — it down-weighted them via
+                              # relevancy. Hard-gating dropped every protest/coup/
+                              # currency-crisis market (directly_about_war=0),
+                              # capping coverage at ~12 countries. As a weight-30
+                              # relevancy factor it still pushes pure-war markets to
+                              # the top, but instability markets now stay in (low
+                              # weight) so their countries appear — restoring breadth.
+  - id: armed_conflict
+    type: binary
+    prompt_ref: prompts/factors/armed_conflict-v1
+    weight: 15   # v22: 20→15 (rescaled; stays war-specific — a violence sub-signal that ranks violent turmoil above non-violent)
+  - id: state_actor
+    type: binary
+    prompt_ref: prompts/factors/state_actor-v1
+    weight: 10   # v22: 15→10 (rescaled)
+  - id: kinetic_action
+    type: binary
+    prompt_ref: prompts/factors/kinetic_action-v1
+    weight: 10   # v22: 15→10 (rescaled; violence sub-signal)
+  - id: near_term
+    type: binary
+    prompt_ref: prompts/factors/near_term-v1
+    weight: 8   # v22: 10→8 (rescaled)
+  - id: high_severity
+    type: binary
+    prompt_ref: prompts/factors/high_severity-v1
+    weight: 7   # v22: 10→7 (rescaled; severity sub-signal)
+  # Country-extraction factor (llm_fallback tier): for bilateral / titles the
+  # alias matcher can't disambiguate, the audited LLM picks the primary country.
+  - id: country_extraction
+    type: extraction
+    prompt_ref: prompts/factors/country-extraction-v1
+    weight: null
+
+extraction:
+  group_by: country
+  sides: none                 # war entities have no R/D side; direction is a factor
+  # patterns carries coverage (the gpt-4o-mini country_extraction llm_fallback
+  # currently returns value=0 for every market, so it adds nothing — patterns is
+  # the real classifier). The patterns matcher (engine/geo.match_country) now
+  # guards out leaders'-meeting/summit titles so it stops claiming meeting venues
+  # as war countries. No candidates tier (no party to resolve).
+  methods: [patterns, llm_fallback]
+
+weighting:
+  liquidity:
+    method: quantile          # per-country leaf weights markets by book depth
+    play_money_weight: 0.5    # Manifold play-money discounted vs real-money depth (0.9-1.5)
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: geo_weighted_mean
+  rollup:
+    cross_entity: gdp_pop_weighted   # 65% GDP / 35% population
+    group_through: region            # country → region → world
+    include_zero_groups: true        # region includes absent countries as 0
+    min_entity_relevancy: 0.5        # v21: traded contracts must carry ≥0.5 summed
+                                     # relevancy to publish a liquidity-weighted
+                                     # country reading; else relevancy-only over the
+                                     # real-money set; else the country is unscored.
+
+publish:
+  cadence: every_2h
+  channels: [api]

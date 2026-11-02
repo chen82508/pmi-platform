@@ -1,0 +1,194 @@
+# BTC Bull/Bear Index — directional sentiment gauge for Bitcoin.
+#
+# A single 0..100 axis (NOT two indexes): 50 = balanced, > 50 = the book leans
+# BULLISH (probability mass sits on BTC going up / above levels / new highs),
+# < 50 = leans BEARISH. This reuses the war-index machinery one-for-one: the
+# `direction` ternary (here `btc_direction`) flips a market's price contribution
+# +/- depending on what a YES resolution *means* for price, and
+# `weighted_average_x_100` folds direction x price x liquidity into the 0..100
+# index. See pmi_core/engine/aggregator.py::aggregate.
+#
+# Why this maps cleanly onto Bitcoin markets: the dominant BTC market structure
+# across our real-money venues is directional price bets —
+#   * "Bitcoin above $64,000 on June 24?"            (polymarket)  YES => up
+#   * "Bitcoin price on Jun 23? - $55,900 or above"  (kalshi)      YES => up
+#   * "Will Bitcoin's price exceed $63,500 ...?"      (forecastex)  YES => up
+#   * "Bitcoin all time high by June 30, 2026?"       (polymarket)  YES => up
+#   * "Bitcoin Up or Down - <window>"                 (polymarket)  YES => up
+# `btc_direction` reads that polarity; the two weighted factors gate relevancy
+# (is this really a BTC *price* market?) and magnitude (is it a substantive move,
+# not sub-hourly noise / a $100-wide range bin?).
+#
+# MONEYNESS NORMALIZATION (v4): over a ladder of "above $X" strikes the per-market
+# P(YES) is naturally ~0.5 on average (low strikes ~1.0, high strikes ~0.0) — and
+# a ladder lists far more strikes above spot than below, so before v4 that listing
+# skew, not sentiment, set the absolute level (it read ~16). v4 weights each market
+# by a Gaussian kernel in log-moneyness centred on the ladder-implied spot, so
+# near-the-money strikes carry the score and the deep OTM/ITM skew cancels —
+# 50 ≈ balanced is now meaningful. See weighting.moneyness + engine/moneyness.py.
+# Still read the time series for the cleanest sentiment signal; an external BTC
+# spot feed (vs the ladder-implied spot used here) remains a possible refinement.
+
+id: btc-bull-bear-index
+version: 12  # v12 (2026-10-06): max_markets 1000 -> 5000 so the cap stops binding. The live
+            # bitcoin pool is ~1,620 markets (kalshi opens ~3.8k same-day strike ladders a day),
+            # and with the cap binding WHICH 1000 got in was decided by the semantic cosine rank
+            # — an approximate HNSW walk over 354k embedded bitcoin markets, almost all dead
+            # ladders. On a bad walk (10-06 08:38, 08:51 UTC) zero live markets made the top-10k,
+            # the cap fell back to id-DESC = the newest unembedded same-day strikes, and the tick
+            # scored 28 members (57.1) against a ~180-member baseline (45–48). Uncapped, the
+            # candidate set is the whole live pool and the rank no longer decides membership.
+            # One-time cost: ~620 previously-evicted markets × 3 factors on the first tick.
+            # Pairs with the partial-tick guard (engine/tick_guard.py) that now holds such ticks.
+            # v11 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v10 (2026-08-19): re-add robinhood now that the By-Question trend fan-out is batched (one call, not N) so a large member count no longer times out. NOTE: robinhood BTC ladders duplicate Kalshi's, so the score still leans robinhood-heavy — acceptable per product; a symbol-based fold would fix the double-count.  # v9 (2026-08-19): remove robinhood — its dense BTC strike ladders (dup of Kalshi) flooded the index (57% of members), skewed the score, and blew up the By-Question page's per-member trend fan-out. Robinhood stays in esports.  # v8 (2026-08-19): add robinhood venue  # v7 (2026-07-11): raise max_markets 250 -> 1000. At 250 (newest-first
+            # eviction) polymarket's churn of recent BTC markets crowded kalshi out
+            # (29/250 kalshi), flipping the index to polymarket-dominated. 1000 covers
+            # ~all ~1032 traded BTC markets so kalshi + polymarket + forecastex coexist.
+            # v6 (2026-07-11): re-add polymarket alongside kalshi/gemini/forecastex.
+            # v3 dropped polymarket as "mostly unpriced", but it now carries ~467
+            # traded / 371 priced BTC markets (measured) — a large real-money source.
+            # btc_major_move already down-weights the intraday Up/Down noise it adds,
+            # and v6 (moneyness.py) now parses "$X to $Y" range bins at their midpoint
+            # so they count instead of being dropped as no-strike.
+            #
+            # v5 (2026-06-25): untraded-market quality gate (min_volume_24h). After
+            # v4, measurement showed the residual bearishness was DATA, not model:
+            # in the scored kalshi ladder 428 of 489 strikes had ZERO 24h volume and
+            # carried a stale last_price of 0 — including below-spot "above $X"
+            # strikes that should price ~1.0 — which the signed formula reads as
+            # strong bearish conviction, and the ones near spot get full moneyness
+            # weight. The 36 genuinely-traded markets implied a roughly NEUTRAL book
+            # (spot ~$60.5k, the $60,773 strike priced 0.51). min_volume_24h gates
+            # untraded markets out at selection, BEFORE the max_markets cap, so the
+            # cap fills with traded strikes. Pairs with v4 moneyness: v4 removes the
+            # strike-listing skew, v5 removes the stale-zero noise. Judgments
+            # unchanged → re-scores $0.
+            #
+            # v4 (2026-06-25): resolve the KNOWN RESIDUAL — strike-aware moneyness
+            # normalization (weighting.moneyness, engine/moneyness.py). v3 read ~16
+            # not because sentiment was bearish but because the "$X or above" ladder
+            # lists far more strikes ABOVE spot than below: each far-OTM strike is
+            # correctly priced ~0 yet the signed formula scored it 2·0.05−1≈−0.9
+            # ("bearish"), so the listing skew, not sentiment, set the level
+            # (measured: 1185 +1-direction markets, avg price 0.117, 87% priced
+            # <0.20). v4 weights each market by a Gaussian kernel in log-moneyness
+            # ln(strike/implied_spot) — near-the-money strikes (where price encodes
+            # genuine up/down conviction) dominate; deep OTM/ITM decay to ~0. Implied
+            # spot is read off the ladders themselves (strike where P(YES) crosses
+            # 0.5), so NO external price feed — the offline/$0 cache-hit path holds.
+            # A balanced book now reads ~50; the index moves on real directional
+            # pricing (a near-spot longer-dated strike priced >0.5 = expects BTC above
+            # current spot = bullish). Factor judgments unchanged → re-scores $0.
+            #
+            # v3 (2026-06-24): the lasting tune. Carries v2's two structural wins
+            # and corrects v2's scope mistake.
+            # KEPT FROM v2: (1) formula → signed_weighted_average_x_100 — centers
+            # each market on a coin-flip so a symmetric "Up or Down" market priced
+            # 0.50 is NEUTRAL (50), not bullish; the legacy weighted_average_x_100
+            # mapped 0.50 → +0.5 and pinned the index high. (2) [engine fix, not in
+            # YAML] the aggregator now reads the direction factor by TYPE, so
+            # btc_direction's -1/0/+1 actually counts — v1 silently defaulted every
+            # market to +1 and had no bull/bear signal at all.
+            # CHANGED FROM v2: venues [polymarket] → [kalshi, gemini, forecastex].
+            # Polymarket was picked in v2 for its clean "Up or Down" markets, but
+            # MEASUREMENT showed only ~20% (24/120) of its newest BTC markets carry a
+            # non-null price in ts_price_snapshots — the intraday Up/Down + hourly
+            # books are mostly unpriced here, so the aggregator defaulted them to 0.5
+            # and the score rested on a thin slice. Kalshi/Gemini/ForecastEx newest
+            # BTC are ~100% priced and ~79% directional ("$X or above" / "exceed
+            # $X"), with ~20% range-bins that the centered formula makes neutral.
+            # NOT 12b: btc_direction on gemma3:12b thrashes the single T4 (8GB 12b +
+            # 3.3GB 4b can't co-reside → model reload every call, 80-100s vs ~10s),
+            # so all three factors stay on gemma3:4b. All-12b (no thrash, ~40min/
+            # tick) or a bigger GPU is the path if sharper direction is needed.
+            # KNOWN RESIDUAL: "$X or above" ladders encode the price-LEVEL
+            # distribution, not pure sentiment — without a BTC spot feed to center on
+            # moneyness the absolute level is only a RELATIVE gauge (watch the time
+            # series). Spot-aware normalization is a future engine refinement.
+title: "BTC Bull/Bear Index"
+owner: pmi-team
+
+# Priced, directional venues (see v3 note): these carry ~100% non-null prices and
+# mostly "$X or above" / "exceed $X" markets. Excludes Polymarket (newest BTC books
+# mostly unpriced here) and the play-money venues. Structural scope, like the
+# seat-count indexes. max_markets bounds the factor-LLM loop; id-DESC eviction
+# scores the newest ~250 open BTC markets — today ~79% directional, ~20% range-bins
+# (which the centered formula renders neutral).
+venues: [robinhood, kalshi, gemini, forecastex, polymarket, metaculus, manifold]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+# v12: must stay ABOVE the live bitcoin pool (~1.6k today) — a binding cap hands
+# membership to the semantic rank lottery (see the v12 note). Raise it before the
+# selector logs `selector.limit_saturated` for this index.
+max_markets: 5000
+# v5 untraded-market gate: require real 24h volume. Dense kalshi strike ladders
+# are mostly untraded — those strikes carry a stale last_price of 0 that reads as
+# false bearish conviction (428/489 in the measured ladder). Gating runs BEFORE
+# max_markets, so the cap fills with traded strikes, not untraded zeros. 1 = "must
+# have traded" (untraded kalshi BTC strikes sit at exactly 0; real ones >= ~500).
+min_volume_24h: 1
+
+selectors:
+  - type: keyword
+    terms:
+      - bitcoin
+      - btc
+  # Semantic discovery + Tier 0 cosine gate (pipeline._tier0_prefilter). Fail-open
+  # where embeddings are missing (kalshi/forecastex BTC may be unembedded), so
+  # keyword carries membership; the anchor culls keyword false-positives (e.g.
+  # "Will <politician> mention Bitcoin") for venues that ARE embedded (polymarket).
+  - type: semantic
+    anchor: "Bitcoin (BTC) spot price moving up or down — bullish rallies and new all-time highs versus bearish declines and crashes, and whether the price closes above or below key dollar levels."
+    min_similarity: 0.6
+
+factors:
+  # The bull/bear axis. weight: null => does NOT participate in relevancy; it only
+  # sets the sign of each market's price contribution (mirrors war `direction`).
+  - id: btc_direction
+    type: ternary
+    prompt_ref: prompts/factors/btc_direction-v1
+    weight: null
+  # Relevancy gate: is the market's resolution directly a function of BTC's price?
+  # Excludes Bitcoin-adjacent-but-not-price markets (a politician mentioning BTC,
+  # an ETF approval, hash rate, a company's treasury) so they don't dilute the
+  # directional read.
+  - id: btc_price_relevance
+    type: binary
+    prompt_ref: prompts/factors/btc_price_relevance-v1
+    weight: 70
+  # Magnitude gate: does YES represent a substantive move / decisive level, not
+  # sub-hourly "Up or Down" coin-flips or $100-wide range bins? Down-weights
+  # high-frequency noise so the index reflects conviction, not microstructure.
+  - id: btc_major_move
+    type: binary
+    prompt_ref: prompts/factors/btc_major_move-v1
+    weight: 30
+
+weighting:
+  liquidity:
+    method: quantile
+  # v4 strike-aware moneyness normalization (see the v4 version note + engine/
+  # moneyness.py). Weights each market by a Gaussian kernel in log-moneyness
+  # ln(strike/implied_spot): near-the-money strikes dominate, deep OTM/ITM "$X or
+  # above" strikes — which encode distance-from-spot, not sentiment — decay to ~0,
+  # so the structural strike-listing skew no longer pins the index low. Implied
+  # spot is read off the ladders (no external feed → stays offline / $0).
+  moneyness:
+    enabled: true
+    bandwidth: 0.05      # log-moneyness kernel width (~$3k band at $60k spot)
+    min_ladder_size: 4   # priced "above $X" strikes a ladder needs to vote on spot
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  # P0/P1 demo: relax so a sparse tick still produces a score. Raise to >= 10 for
+  # a trustworthy public reading.
+  min_components: 1
+  # Centered bull/bear formula (v2): price 0.50 → neutral (50). See engine
+  # aggregator.py and the v2 note in the header.
+  formula: signed_weighted_average_x_100
+
+publish:
+  cadence: every_2h
+  channels: [api]

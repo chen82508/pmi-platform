@@ -1,0 +1,79 @@
+# MAGA — US Senate 2026 partisan lean (per-state heat, 0–100).
+#
+# One of the three chamber indexes the MAGA vertical is built from. Declarative
+# replacement for the bespoke `routes/maga.py` + `state_lean.py` Senate path:
+# the extraction stage classifies each market into one (us_state) Senate race,
+# and `formula: entity_lean_mean` with `rollup.cross_entity: equal` produces:
+#   * per-state heats  → breakdown["entities"]  (the choropleth + state pages)
+#   * national lean    → the top-line score      (mean of the state heats)
+#
+# Weighting (Danny 2026-06-23 sign-off): the per-state LEAF is liquidity-weighted
+# (multiple contracts of one race collapse by book depth); the cross-race rollup
+# is EQUAL (every contested state counts once). This differs from the legacy
+# volume-weighted state_lean mean and WILL shift published numbers — intended.
+#
+# Grammar parity note: this reuses the `us_state` (seat_mapping) Senate grammar,
+# exactly the markets the /senate-board + senate-seats index read — so the MAGA
+# Senate map and the seat board now agree on membership. Kalshi's yearless
+# party-aggregate phrasing ("Will Democratics win the Senate race in Alabama? -
+# Democratic party") is now parsed too (2026-06-24, Danny sign-off): 136 priced
+# per-state party legs, direction read off the trailing "<party> party" leg.
+
+id: maga-senate-2026
+version: 14  # v14 (2026-09-30): add gemini venue — 237 per-candidate Senate/Governor/House "Winner" legs surfaced since v7; coherent prices (~1.0 per-race sums) but zero volume → shown at weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue already prices the seat; gemini-only seats fold via the total_w=0 uniform fallback). Reverses v7's "gemini nothing". ;  # v13 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v12 2026-09-18: seat_race_extraction prompt v1→v2 (office-aware + world-knowledge candidate party) — mirrors us-senate v17; shared factor so the same v2 prompt serves the lean board. ;  # v11 2026-09-18: add ibkr venue (IBKR ForecastTrader) — 202 per-candidate Senate general-election legs, keyword-matched + cross-venue merged by reduce_races ;  # v10 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v9 (2026-08-30): max_markets 3000→10000 — adding kalshi bloated the senate pool to 6193, past the old 3000 cap; the id-DESC selector kept newest (kalshi) and truncated the 78 polymarket + predictit US-senate legs (only 3 polymarket / 0 predictit were surviving). Raise so every venue is selected and reduce_races can actually cross-merge.  # v8 (2026-08-30): drop unused is_senate_race_2026 factor (entity_lean never consumes it — pure eval cost)  # v7 (2026-08-30): drop robinhood from venues — it carries no per-state Senate market (0 contributed), listing it was misleading  # v6 (2026-08-30): cycle: 2026 gate — per-market election_cycle drops kalshi's yearless -28 legs (CA/NY etc. have no 2026 Senate race), race_calendar keeps only the 35 contested states  # v5 (2026-08-19): add robinhood venue
+title: "MAGA — US Senate 2026 (Republican Lean)"
+owner: danny
+
+# Venues with parseable per-state party-direct Senate markets (same scoping as
+# us-senate-2026-republican-seats). gemini added v14: its "<State> US Senate
+# Winner - <Candidate>" legs classify via seat_race_extraction (world-knowledge
+# party); zero volume so weight 0 (display, not score) — see version note.
+venues: [polymarket, forecastex, predictit, kalshi, ibkr, metaculus, manifold, gemini]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+max_markets: 10000
+
+selectors:
+  - type: keyword
+    terms:
+      - "Senate"
+      - "Senator"
+      - "2026 Senate"
+      - "U.S. Senate"
+
+# entity_lean_mean derives membership from the extraction grammar + cycle gate,
+# NOT from a relevancy factor — so is_senate_race_2026 was evaluated every tick
+# (gpt-4o-mini cost) but never consumed. Dropped (v8). republican_on_yes stays as
+# the candidates-tier party hint; seat_race_extraction stays as the llm_fallback.
+factors:
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+  - id: seat_race_extraction
+    type: extraction
+    prompt_ref: prompts/factors/seat-race-extraction-v2
+    weight: null
+
+extraction:
+  group_by: us_state
+  sides: party
+  methods: [patterns, candidates, llm_fallback]
+  cycle: 2026   # scope to the 2026 Senate cycle: drop non-2026 markets, gate entities to race_calendar's 35 contested states
+
+weighting:
+  liquidity:
+    method: quantile   # leaf only: collapses one race's contracts by book depth
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: entity_lean_mean
+  rollup:
+    cross_entity: equal   # national lean = simple mean of per-state heats
+
+publish:
+  cadence: every_2h
+  channels: [api]

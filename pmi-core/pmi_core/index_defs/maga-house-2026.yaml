@@ -1,0 +1,90 @@
+# MAGA — US House 2026 partisan lean (per-district heat, rolled up to states).
+#
+# The House chamber index for the MAGA vertical. The ONLY one that needs a
+# two-step rollup: the `us_house_district` extraction stage produces one heat
+# per district, then `rollup: {cross_entity: equal, group_through: us_state}`
+# folds districts → states (equal) → national (equal). This is the key MAGA
+# design rule — 50 states weigh equally, NOT 435 districts, so California's 52
+# districts don't swamp Wyoming's 1.
+#
+# breakdown layout (read by routes/maga.py):
+#   * entities → per-DISTRICT heats   ("California-20")  — the /question pages
+#   * groups   → per-STATE house lean ("California")     — the /house/states page
+#   * score    → national house lean                     — the top-line
+#
+# Leaf weighting (one district's contracts) is liquidity-weighted; every level
+# above is equal — same Danny 2026-06-23 contract as the Senate/Governor indexes.
+#
+# Grammar/venue scoping mirrors us-house-2026-republican-seats: ForecastEx is the
+# only ingested venue with the verbose per-district win markets. Kalshi adds an
+# abbreviated code form with a party-aggregate leg ("Will Democratic win the
+# House race for AL-01? - Democratic party") — parsed 2026-06-24 (Danny
+# sign-off): 925 priced per-district party legs, direction off the trailing
+# "<party> party" leg, code mapped through the same XX-NN grammar as polymarket.
+
+id: maga-house-2026
+version: 13  # v13 (2026-09-30): add gemini venue — its "<State>-NN House Winner - <Candidate>" legs classify via house_race_extraction (world-knowledge party); coherent prices but zero volume → weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue prices the district; gemini-only districts fold via the total_w=0 uniform fallback). ;  # v12 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v11 2026-09-21: onboard IBKR house — add ibkr venue + title_patterns (bare "MI-13 General Election") + house_race_extraction prompt v1→v2 (XX-NN compact format + world-knowledge candidate party). Mirrors us-house v11; guard test keeps selectors aligned. ;  # v10 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v9 (2026-08-30): max_markets 12000→16000 — house pool grew past 12000 (kalshi 360 districts + polymarket), so the id-DESC cap was clipping the oldest legs. Raise over the ~14.6k word-boundary pool.  # v8 (2026-08-30): drop unused is_house_race_2026 factor (entity_lean never consumes it — pure eval cost)  # v7 (2026-08-30): drop robinhood from venues — no US House market (0 contributed)  # v6 (2026-08-30): cycle: 2026 gate — per-market election_cycle drops non-2026 kalshi legs; all 435 districts up every even year so no race_calendar entity gate (pass-through)  # v5 (2026-08-19): add robinhood venue
+title: "MAGA — US House 2026 (Republican Lean)"
+owner: danny
+
+venues: [forecastex, polymarket, kalshi, ibkr, metaculus, manifold, gemini]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+# Adding kalshi pushed the "House"/"Representative"/"Congress" keyword pool past
+# 9k markets; at the old 5000 cap the selector truncated away the polymarket /
+# forecastex per-district markets (the venue-priority representatives), leaving
+# stale kalshi-only coverage and gutting per-state coverage (37/50). Raised so
+# all venues are selected — venue priority then keeps polymarket/forecastex as
+# the representative and kalshi only fills genuine gaps. (2026-06-24)
+max_markets: 16000
+
+selectors:
+  - type: keyword
+    terms:
+      - "House"
+      - "Representative"
+      - "Congress"
+      - "2026 House"
+      - "U.S. House"
+    # IBKR names House races by bare district code ("MI-13 General Election") —
+    # mirrors us-house-2026-republican-seats (guard test keeps them aligned).
+    title_patterns:
+      - '[A-Z]{2}-[0-9]{1,2} General Election'
+
+# entity_lean_mean derives membership from the extraction grammar + cycle gate,
+# NOT from a relevancy factor — so is_house_race_2026 was evaluated every tick
+# (gpt-4o-mini cost) but never consumed. Dropped (v8). republican_on_yes stays as
+# the candidates-tier party hint; house_race_extraction stays as the llm_fallback.
+factors:
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+  - id: house_race_extraction
+    type: extraction
+    prompt_ref: prompts/factors/house-race-extraction-v2
+    weight: null
+
+extraction:
+  group_by: us_house_district
+  sides: party
+  methods: [patterns, candidates, llm_fallback]
+  cycle: 2026   # scope to the 2026 House cycle: drop non-2026 markets (all 435 districts up every even year, so no per-state calendar gate)
+
+weighting:
+  liquidity:
+    method: quantile   # leaf only: collapses one district's contracts by book depth
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: entity_lean_mean
+  rollup:
+    cross_entity: equal      # equal weight at BOTH district→state and state→national
+    group_through: us_state  # fold the 435 districts up by state first
+
+publish:
+  cadence: every_2h
+  channels: [api]

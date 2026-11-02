@@ -1,0 +1,101 @@
+# US House 2026 — projected Republican seat *count* (#).
+#
+# Status: `formula: seat_projection_sum` with the CORR-1.8 declarative
+# extraction stage `group_by: us_house_district`. Component markets collapse
+# to one P(R wins) per congressional district via engine/extraction.py's
+# district grammar, then the CORR-1.6 Poisson-binomial (zero holdover — all
+# 435 seats are up every cycle) folds them into E[R seats].
+#
+# Before CORR-1.8 this index returned score=None: it scored polymarket only
+# (the default venue), which lists NO per-district win markets, and the
+# aggregator's seat grammar was hardcoded to per-state *Senate* races. The fix
+# is two declarations, no new aggregator code — point `venues` at ForecastEx
+# (the only ingested venue with per-district party markets) and declare the
+# district extraction grammar.
+
+id: us-house-2026-republican-seats
+version: 13  # v13 (2026-09-30): add gemini venue — its "<State>-NN House Winner - <Candidate>" legs classify via house_race_extraction (world-knowledge party); coherent prices but zero volume → weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue prices the district; gemini-only districts fold via the total_w=0 uniform fallback). ;  # v12 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v11 2026-09-21: onboard IBKR house — add ibkr venue + title_patterns ['[A-Z]{2}-[0-9]{1,2} General Election'] (IBKR's bare "MI-13 General Election" district titles carry no House keyword) + house_race_extraction prompt v1→v2 (recognises the XX-NN compact format + judges candidate party from world knowledge; v1 returned 0/10 on ibkr, v2 10/10). Requires: models register house_race_extraction --prompt-version 2 + promote. ;  # v10 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v9 (2026-08-31): drop unused is_house_race_2026 factor — seat_projection_sum scores via reduce_races (republican_on_yes + house_race_extraction) and never reads is_house_race; pure per-tick eval cost (now on gpt-4o-mini). Mirrors maga-house v8. Byte-identical score.  # v8 (2026-08-30): max_markets 5000→16000 — the 5000 cap over a ~14.6k house pool truncated it to only 216 districts (E[R]=88, badly undercounted); raise to cover all 435 like maga-house.  # v7 (2026-08-30): add kalshi + polymarket + cycle:2026 + reduce_races — align with maga-house. kalshi's 360 per-district legs (party read from subject) now flow in; cross-venue merge like the MAGA-derived board (drop no-op robinhood).  # v6 (2026-08-19): add robinhood venue  # v4 (CORR-1.8): venues → [forecastex] (only venue with per-district win markets; polymarket has none, which is why this index was null) + declarative extraction `group_by: us_house_district` drives seat_projection_sum + house_race_extraction LLM-fallback factor + max_markets over the keyword hit count. v3 (ab03bd3): status header rewritten when seat_projection_sum landed — content changed, so SCD2 requires a new version (yaml_sha256 is over the whole file, comments included). v2 (CORR-1.2): added aggregation.seat_projection chamber geometry
+title: "US House 2026 — Projected Republican Seats (#)"
+owner: pmi-team
+
+# ForecastEx is the only ingested venue carrying per-district win markets:
+#   party-direct: "Will the Republican party win the California's 20th District
+#                  general election for the US House of Representatives in 2026?"
+#   party-proxy:  "Will Democratic Primary Winner win the Alabama 5th District
+#                  general election ..."  (primary winner IS the nominee)
+#   candidate:    "Will Adam Gray win the California 13th District general
+#                  election ..."  (party from the republican_on_yes factor)
+# Kalshi's ~6.7k House markets are margin-of-victory brackets / primary legs
+# with no per-district P(party wins) reading (same exclusion as the senate
+# variant), and polymarket lists no per-district market — including either
+# would only add factor-eval cost with zero contested-district yield.
+# ~1,173 house keyword hits on forecastex as of 2026-06-12; the cap must clear
+# that so id-DESC ordering doesn't evict districts.
+venues: [forecastex, polymarket, kalshi, ibkr, metaculus, manifold, gemini]
+include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored
+max_markets: 16000
+
+selectors:
+  - type: keyword
+    terms:
+      - "House"
+      - "Representative"
+      - "Congress"
+      - "2026 House"
+      - "U.S. House"
+    # IBKR names House races by bare district code with no "House" word
+    # ("MI-13 General Election — <candidate>") — a literal term can't catch it.
+    # Anchored on "General Election" so the pg_trgm index still assists and it
+    # can't match "<State> Senate/Governor General Election".
+    title_patterns:
+      - '[A-Z]{2}-[0-9]{1,2} General Election'
+
+factors:
+  - id: republican_on_yes
+    type: binary
+    prompt_ref: prompts/factors/republican-on-yes-v1
+    weight: 40
+  # LLM extraction fallback (lowest precedence tier): for district titles no
+  # per-venue pattern understands, extract {state, district, party, race_type}
+  # as audited structure. Stub default = extracts nothing (zero behaviour
+  # change) until a CoreFactorModel is promoted:
+  #   pmi-core models register --factor house_race_extraction \
+  #     --prompt-name factors/house-race-extraction --prompt-version 2 \
+  #     --llm gpt-4o-mini-2024-07-18 --temperature 0.0
+  #   pmi-core models promote <id> --stage production
+  - id: house_race_extraction
+    type: extraction
+    prompt_ref: prompts/factors/house-race-extraction-v2
+    weight: null
+
+# CORR-1.8 — declarative extraction stage. Groups the selected markets into
+# one contested seat per congressional district (e.g. "California-20"). Same
+# three precedence-ordered tiers as the senate variant; only group_by differs.
+extraction:
+  group_by: us_house_district
+  sides: party
+  methods: [patterns, candidates, llm_fallback]
+  cycle: 2026   # gate non-2026 kalshi legs (all 435 districts up every even year, so no race_calendar entity gate)
+
+weighting:
+  liquidity:
+    method: none   # seat *count* doesn't get liquidity-weighted: each seat counts once
+
+aggregation:
+  collapse:
+    enabled: true
+    max_spread_days: 30
+    representative: max_probability
+  min_components: 1
+  formula: seat_projection_sum
+  # CORR-1.2 — the House is the natural zero-holdover case: all 435 seats are
+  # up every cycle, so there is no holdover and the whole chamber is contested.
+  seat_projection:
+    total_seats: 435
+    majority_threshold: 218
+    holdover_r: 0
+    holdover_d: 0
+
+publish:
+  cadence: every_2h
+  channels: [api]
