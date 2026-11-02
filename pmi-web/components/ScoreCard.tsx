@@ -12,8 +12,8 @@ export function ScoreCard({ envelope, meta }: ScoreCardProps) {
       <div className="rounded-lg border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
         <p className="font-medium">No score yet for {meta.title}.</p>
         <p className="mt-1">
-          Run <code className="font-mono">just workers-score {meta.id}</code> (or wait for the
-          next cron tick).
+          Run <code className="font-mono">just score {meta.id}</code> (or wait for the next
+          cron tick).
         </p>
       </div>
     );

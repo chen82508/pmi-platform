@@ -11,7 +11,13 @@
  * attach the service key; the browser path never sees it.
  */
 
-import type { HistoryEnvelope, IndexSummary, ScoreEnvelope, SourceHealthRow } from "./types";
+import type {
+  ExplainPayload,
+  HistoryEnvelope,
+  IndexSummary,
+  ScoreEnvelope,
+  SourceHealthRow,
+} from "./types";
 
 const SERVER_BASE =
   process.env.PMI_API_URL || process.env.NEXT_PUBLIC_PMI_API_URL || "http://pmi-api:8000";
@@ -95,6 +101,7 @@ export const api = {
     const qs = params.toString() ? `?${params.toString()}` : "";
     return get<HistoryEnvelope>(`/indexes/${encodeURIComponent(id)}/score/history${qs}`, revalidateFor(opts?.revalidate));
   },
+  explain: (id: string) => get<ExplainPayload>(`/indexes/${encodeURIComponent(id)}/explain`),
   sourcesHealth: () => get<SourceHealthRow[]>("/sources/health"),
 };
 

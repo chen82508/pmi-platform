@@ -6,7 +6,7 @@ each score independently via ``formula: entity_lean_mean`` and persist:
   * per-state / per-district heats → ``ts_index_scores.breakdown``
 
 This module composes those persisted outputs into the two cross-chamber views
-the website shows, WITHOUT re-running any scoring (Danny 2026-06-23: top MAGA is
+the website shows, WITHOUT re-running any scoring (product decision 2026-06-23: top MAGA is
 an API-layer composition, not a fourth index):
 
   * **Top MAGA PMI (L4)** — equal-weight mean of the three chamber national

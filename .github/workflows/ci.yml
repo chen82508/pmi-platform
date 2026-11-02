@@ -117,24 +117,7 @@ jobs:
         working-directory: pmi-core
         run: pmi-core demo history --days 14
       - name: Every demo index published a full non-null series
-        run: |
-          psql "postgresql://pmi:pmi@localhost:5432/pmi" -v ON_ERROR_STOP=1 -At <<'SQL'
-          SELECT d.index_id, count(s.score), round(min(s.score), 2), round(max(s.score), 2)
-            FROM ts_index_scores s JOIN core_index_definitions d ON d.id = s.index_definition_id
-           GROUP BY 1 ORDER BY 1;
-          DO $$
-          BEGIN
-            IF (SELECT count(DISTINCT s.index_definition_id) FROM ts_index_scores s
-                 WHERE s.score IS NOT NULL) < 3
-               OR EXISTS (SELECT 1 FROM ts_index_scores s
-                  GROUP BY s.index_definition_id HAVING count(s.score) < 15) THEN
-              RAISE EXCEPTION 'demo indices did not all publish 15 scored points';
-            END IF;
-            IF EXISTS (SELECT 1 FROM audit_evaluations WHERE model_id <> 'fixture/labels') THEN
-              RAISE EXCEPTION 'an evaluation bypassed the fixture provider';
-            END IF;
-          END $$;
-          SQL
+        run: psql "postgresql://pmi:pmi@localhost:5432/pmi" -v ON_ERROR_STOP=1 -At -f scripts/demo_assertions.sql
 
   web:
     runs-on: ubuntu-latest

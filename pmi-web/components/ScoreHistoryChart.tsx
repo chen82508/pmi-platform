@@ -5,11 +5,8 @@
  *
  *   - recharts ResponsiveContainer + LineChart
  *   - X-axis as numeric timestamp with scale="time"
- *   - 0–100 Y-axis (PMI scores live in [0, 100])
- *
- * Simplified for the P0 scaffold: no rolling-window logic, no skeleton
- * loading state, no custom dot. Bring those back when the dashboard has
- * real users asking for them.
+ *   - Y-axis fitted to the data (padded, clamped to [0, 100]): a fixed 0–100
+ *     axis flattens a two-week move of a couple of points into a straight line
  */
 
 import {
@@ -22,6 +19,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { fittedDomain } from "@/lib/chart";
 import type { HistoryPoint } from "@/lib/types";
 
 interface ScoreHistoryChartProps {
@@ -54,6 +52,9 @@ export function ScoreHistoryChart({ points, height = 360 }: ScoreHistoryChartPro
     ts: new Date(p.as_of).getTime(),
     score: p.score !== null ? Number(p.score) : null,
   }));
+  const domain = fittedDomain(
+    data.flatMap((d) => (d.score === null ? [] : [d.score])),
+  );
 
   return (
     <div style={{ width: "100%", height }}>
@@ -76,8 +77,9 @@ export function ScoreHistoryChart({ points, height = 360 }: ScoreHistoryChartPro
           />
           <YAxis
             stroke="#30374F"
-            domain={[0, 100]}
-            ticks={[0, 20, 40, 60, 80, 100]}
+            domain={domain}
+            tickCount={6}
+            allowDecimals={false}
             tick={{ fill: "#30374F", fontSize: 12 }}
           />
           <Tooltip

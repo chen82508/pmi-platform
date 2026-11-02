@@ -37,9 +37,9 @@ seed:
 score INDEX_ID='war-index-2026':
     {{compose}} run --rm pmi-core score {{INDEX_ID}}
 
-# Fixture demo: migrate, load the synthetic markets, bind every factor to the
-# fixture provider (pre-labelled judgements, no LLM), tag Senate races, then
-# score the demo indices once a day for the last 14 days.
+# Loads the synthetic markets, binds every factor to the fixture provider
+# (pre-labelled judgements, no LLM), tags Senate races, scores 14 days.
+# Fixture demo: migrate, seed, bind, tag, 14-day history.
 bootstrap: migrate seed
     {{compose}} run --rm pmi-core demo bind
     docker exec pmi-worker pmi-workers run tag-races
@@ -48,6 +48,15 @@ bootstrap: migrate seed
 # Score an index definition in-process against the fixtures (no DB, no LLM).
 dry-run YAML='pmi_core/index_defs/war-index-2026.yaml':
     cd {{root_dir}}/pmi-core && python -m pmi_core.cli dry-run {{YAML}} --compact
+
+# A fresh stack, the full demo bootstrap, then the assertions CI runs.
+# WARNING: `down -v` deletes this stack's database volume.
+# Reproduce CI's fixture end-to-end check with Docker only.
+e2e:
+    {{compose}} --profile web down -v
+    just up
+    just bootstrap
+    docker exec -i pmi-postgres psql -U pmi -d pmi -v ON_ERROR_STOP=1 -At < scripts/demo_assertions.sql
 
 # ── tests (same commands CI runs) ────────────────────────────────────────────
 
@@ -73,6 +82,9 @@ lint:
 
 web-check:
     cd {{root_dir}}/pmi-web && npm ci && npm run typecheck && npm test && npm run build
+
+# Everything CI runs, locally (needs uv, node and terraform on the host).
+ci: lint test-all web-check tf-check e2e
 
 tf-check:
     cd {{root_dir}}/infra/terraform && terraform fmt -check -recursive && \

@@ -7,7 +7,7 @@
 #   * per-state heats  → breakdown["entities"]  (the choropleth + state pages)
 #   * national lean    → the top-line score      (mean of the state heats)
 #
-# Weighting (Danny 2026-06-23 sign-off): the per-state LEAF is liquidity-weighted
+# Weighting (product sign-off 2026-06-23): the per-state LEAF is liquidity-weighted
 # (multiple contracts of one race collapse by book depth); the cross-race rollup
 # is EQUAL (every contested state counts once). This differs from the legacy
 # volume-weighted state_lean mean and WILL shift published numbers — intended.
@@ -16,13 +16,13 @@
 # exactly the markets the /senate-board + senate-seats index read — so the MAGA
 # Senate map and the seat board now agree on membership. Kalshi's yearless
 # party-aggregate phrasing ("Will Democratics win the Senate race in Alabama? -
-# Democratic party") is now parsed too (2026-06-24, Danny sign-off): 136 priced
+# Democratic party") is now parsed too (2026-06-24, product sign-off): 136 priced
 # per-state party legs, direction read off the trailing "<party> party" leg.
 
 id: maga-senate-2026
 version: 14  # v14 (2026-09-30): add gemini venue — 237 per-candidate Senate/Governor/House "Winner" legs surfaced since v7; coherent prices (~1.0 per-race sums) but zero volume → shown at weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue already prices the seat; gemini-only seats fold via the total_w=0 uniform fallback). Reverses v7's "gemini nothing". ;  # v13 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v12 2026-09-18: seat_race_extraction prompt v1→v2 (office-aware + world-knowledge candidate party) — mirrors us-senate v17; shared factor so the same v2 prompt serves the lean board. ;  # v11 2026-09-18: add ibkr venue (IBKR ForecastTrader) — 202 per-candidate Senate general-election legs, keyword-matched + cross-venue merged by reduce_races ;  # v10 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v9 (2026-08-30): max_markets 3000→10000 — adding kalshi bloated the senate pool to 6193, past the old 3000 cap; the id-DESC selector kept newest (kalshi) and truncated the 78 polymarket + predictit US-senate legs (only 3 polymarket / 0 predictit were surviving). Raise so every venue is selected and reduce_races can actually cross-merge.  # v8 (2026-08-30): drop unused is_senate_race_2026 factor (entity_lean never consumes it — pure eval cost)  # v7 (2026-08-30): drop robinhood from venues — it carries no per-state Senate market (0 contributed), listing it was misleading  # v6 (2026-08-30): cycle: 2026 gate — per-market election_cycle drops kalshi's yearless -28 legs (CA/NY etc. have no 2026 Senate race), race_calendar keeps only the 35 contested states  # v5 (2026-08-19): add robinhood venue
 title: "MAGA — US Senate 2026 (Republican Lean)"
-owner: danny
+owner: pmi-team
 
 # Venues with parseable per-state party-direct Senate markets (same scoping as
 # us-senate-2026-republican-seats). gemini added v14: its "<State> US Senate

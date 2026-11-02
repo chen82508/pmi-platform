@@ -23,6 +23,24 @@ and market prices that produced it.
 
 ---
 
+## See it in 30 seconds
+
+![Walkthrough: index list, war index history with tooltip, the markets behind the score, and a backtest replay](docs/images/walkthrough.gif)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/dashboard-indexes.png" alt="Index list with current scores, 14-day change and sparklines"><br><sub><b>Index list.</b> Current score, 14-day change and trend for every index with readings.</sub></td>
+    <td width="50%"><img src="docs/images/index-war.png" alt="War index detail: score, history chart, and the markets driving it"><br><sub><b>Explainability.</b> Score history plus the markets behind it: price, relevancy from the factor judgements, and which way a YES moves the index.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/index-senate.png" alt="US Senate 2026 projected Republican seats over 14 days"><br><sub><b>Seat projection.</b> 35 Senate races folded into a Poisson-binomial projection of Republican seats.</sub></td>
+    <td width="50%"><img src="docs/images/backtest.png" alt="Backtest replay with chart and CSV download"><br><sub><b>Backtest.</b> Replays an index over past prices as a durable, checkpointed workflow, then charts it and offers the CSV.</sub></td>
+  </tr>
+</table>
+
+Every number in these images comes from the bundled synthetic data, produced
+by the same commands described below.
+
 ## Architecture
 
 ```mermaid
@@ -108,36 +126,84 @@ flowchart LR
   that return a `summary` plus a compacted `data` payload and structured
   errors. The `/ask` endpoint answers questions through the same tools.
 
-## Quick start
+## How to run locally
 
-The repository ships a small **synthetic market world** in place of the live
-exchange feeds: 58 invented markets (conflict, a Bitcoin strike ladder, all 35
-US Senate seats up in 2026), each with 14 days of price history and
-pre-labelled factor judgements. A `fixture/` LLM provider replays those labels
-through the same provider interface OpenAI and Ollama use, so model
-resolution, evaluation records, the cache and every aggregation formula run
-for real, with no API key and no GPU. See [`pmi-demo`](pmi-demo/).
+There is no hosted demo, so the repository is built to be reproduced. Two
+pieces make that possible:
 
-### 1. Score an index in-process (no Docker, no database)
+- **A synthetic market world** replaces the live exchange feeds: 58 invented
+  markets (conflict, a Bitcoin strike ladder, all 35 US Senate seats up in
+  2026), each with 14 days of price history. See [`pmi-demo`](pmi-demo/).
+- **A fixture LLM provider** (`fixture/` model ids) replays pre-labelled factor
+  judgements through the *same* provider interface OpenAI and Ollama use. Model
+  resolution, immutable evaluation records, the cache, the job queue and every
+  aggregation formula run for real. There is no mocking below the network
+  call, and no API key or GPU is needed.
+
+The same fixture flow runs in CI on every push, so what you reproduce locally
+is exactly what CI checks.
+
+**Prerequisites:** Docker (with Compose v2) and [`just`](https://github.com/casey/just).
+Nothing else runs on the host for the steps below.
+
+### 1. Reproduce the end-to-end check (one command, about a minute)
 
 ```bash
-just venv          # uv venv + editable installs of every Python package
-cd pmi-core && ../.venv/bin/python -m pmi_core.cli dry-run \
-    pmi_core/index_defs/us-senate-2026-republican-seats.yaml --compact
-#   "score": 52.035, "component_count": 35   ← projected Republican seats
+git clone https://github.com/chen82508/pmi-platform.git && cd pmi-platform
+cp .env.example .env
+just e2e
 ```
 
-### 2. Run the full stack
+`just e2e` builds and starts a fresh stack (Postgres + pgvector, MLflow, API,
+MCP server, four queue workers, dashboard), then:
+
+1. runs the migrations and seeds the synthetic markets and price history;
+2. binds every factor to the fixture provider through the model registry;
+3. tags Senate races with the queue worker;
+4. scores the demo indices once per day for 14 days;
+5. runs [`scripts/demo_assertions.sql`](scripts/demo_assertions.sql), the
+   same assertions CI runs. It passes only if every demo index published a
+   full 15-point series and every evaluation went through the fixture
+   provider (nothing silently fell back to the stub):
+
+```
+btc-bull-bear-index|15|47.20|50.14
+us-senate-2026-republican-seats|15|50.53|52.04
+war-index-2026|15|7.84|8.55
+NOTICE:  demo e2e: OK
+```
+
+`just e2e` recreates the stack's database volume each time it runs.
+
+<details>
+<summary>Without <code>just</code>: the same steps as plain Docker commands</summary>
 
 ```bash
 cp .env.example .env
-just up            # postgres, mlflow, api, mcp, workers, dashboard
-just bootstrap     # migrate → seed fixtures → bind fixture models → 14-day history
-open http://localhost:3000
+docker compose --profile pmi --profile web up -d --build
+docker compose --profile pmi run --rm pmi-core migrate
+docker compose --profile pmi run --rm pmi-core seed
+docker compose --profile pmi run --rm pmi-core demo bind
+docker exec pmi-worker pmi-workers run tag-races
+docker compose --profile pmi run --rm pmi-core demo history --days 14
+docker exec -i pmi-postgres psql -U pmi -d pmi -v ON_ERROR_STOP=1 -At < scripts/demo_assertions.sql
 ```
 
-This publishes a 14-day series for three indices that use three different
-formulas:
+</details>
+
+### 2. Explore the dashboard and API
+
+After `just e2e` (or `just up` followed by `just bootstrap`), the stack keeps running:
+
+| URL | What |
+|---|---|
+| http://localhost:3000 | Dashboard (screenshots above) |
+| http://localhost:8001/docs | API, OpenAPI docs |
+| http://localhost:8001/indexes/war-index-2026/explain | The markets behind a score, as JSON |
+| http://127.0.0.1:5500 | MLflow: prompt registry and pipeline runs |
+
+The demo publishes 14-day series for three indices that each use a different
+aggregation formula:
 
 | Index | Formula | Fixture reading |
 |---|---|---|
@@ -145,21 +211,37 @@ formulas:
 | BTC Bull/Bear | signed average with log-moneyness weighting of the strike ladder | 47.8 / 100 |
 | US Senate 2026 Republican seats | Poisson-binomial seat projection with correlated races | 52.0 seats |
 
-The in-process dry-run gives the same numbers. To score with a real model
-instead, set `OPENAI_API_KEY` (or run `just ollama-up` and set
-`PMI_ACTIVE_EMBEDDING_MODEL=ollama/nomic-embed-text` to turn on the semantic
-selector and Tier 0), then rebind factors with `pmi-core models register` and
-`pmi-core models promote`.
+**Refresh score** on an index page goes through the real on-demand path: the
+API enqueues a job in the Postgres queue, a worker claims and scores it, and
+the page updates. `just down` stops everything.
 
-### 3. Tests
+### 3. Run everything CI runs
+
+This step also needs [`uv`](https://docs.astral.sh/uv/), Node 24 and Terraform:
 
 ```bash
-just test-db       # throwaway pgvector container on :55432
-just test-all      # pytest for every Python package
-just lint
-just web-check     # typecheck, vitest, next build
-just tf-check      # terraform fmt / init / validate
+just venv       # one virtualenv with every Python package (editable)
+just test-db    # throwaway pgvector container on :55432 for the DB-backed suites
+just ci         # ruff + pytest (all packages), web typecheck/tests/build,
+                # terraform fmt/validate, and the Docker end-to-end check
 ```
+
+To score a single definition in-process, with no Docker and no database, using
+the same fixture answers:
+
+```bash
+cd pmi-core && ../.venv/bin/python -m pmi_core.cli dry-run \
+    pmi_core/index_defs/us-senate-2026-republican-seats.yaml --compact
+#   "score": 52.035, "component_count": 35
+```
+
+### Using a real model
+
+Set `OPENAI_API_KEY`, or run `just ollama-up` and set
+`PMI_ACTIVE_EMBEDDING_MODEL=ollama/nomic-embed-text` to enable the semantic
+selector and the Tier 0 pre-filter. Then bind factors with
+`pmi-core models register` and `pmi-core models promote`. `demo bind` never
+replaces a real binding.
 
 ## Infrastructure and CI
 
@@ -184,7 +266,7 @@ See [`infra/terraform/README.md`](infra/terraform/README.md) for usage.
 | Job | Checks |
 |---|---|
 | `python (matrix)` | ruff and pytest for each Python package, against a pgvector service container; dry-run of every index definition |
-| `fixture demo end-to-end` | migrate, seed, bind the fixture provider, tag races and score 14 days against a real Postgres; asserts every demo index published a full series and every evaluation went through the provider |
+| `fixture demo end-to-end` | the `just e2e` flow against a Postgres service container, checked by the same [`scripts/demo_assertions.sql`](scripts/demo_assertions.sql) |
 | `web` | `tsc`, vitest, `next build` |
 | `terraform` | `fmt -check`, `validate`, tflint with the AWS ruleset |
 | `slack notifier lambda` | ruff and pytest |
@@ -213,7 +295,9 @@ pmi-api/         REST API
 pmi-mcp/         MCP server
 pmi-web/         Next.js dashboard
 pmi-notify/      Slack notification helper
-pmi-demo/        fixture markets
+pmi-demo/        synthetic markets + their generator
+scripts/         shared demo assertions (CI and `just e2e`)
+docs/images/     README screenshots
 mlflow/          MLflow server image
 db/init/         Postgres first-boot SQL (extensions, mlflow database)
 infra/terraform/ AWS infrastructure

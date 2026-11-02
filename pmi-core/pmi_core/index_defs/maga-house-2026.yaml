@@ -13,19 +13,19 @@
 #   * score    → national house lean                     — the top-line
 #
 # Leaf weighting (one district's contracts) is liquidity-weighted; every level
-# above is equal — same Danny 2026-06-23 contract as the Senate/Governor indexes.
+# above is equal — same 2026-06-23 product decision as the Senate/Governor indexes.
 #
 # Grammar/venue scoping mirrors us-house-2026-republican-seats: ForecastEx is the
 # only ingested venue with the verbose per-district win markets. Kalshi adds an
 # abbreviated code form with a party-aggregate leg ("Will Democratic win the
-# House race for AL-01? - Democratic party") — parsed 2026-06-24 (Danny
+# House race for AL-01? - Democratic party") — parsed 2026-06-24 (product
 # sign-off): 925 priced per-district party legs, direction off the trailing
 # "<party> party" leg, code mapped through the same XX-NN grammar as polymarket.
 
 id: maga-house-2026
 version: 13  # v13 (2026-09-30): add gemini venue — its "<State>-NN House Winner - <Candidate>" legs classify via house_race_extraction (world-knowledge party); coherent prices but zero volume → weight 0 via the unified liquidity gate, cross-venue merged by reduce_races (neutral where another venue prices the district; gemini-only districts fold via the total_w=0 uniform fallback). ;  # v12 (2026-09-29): show play-money (metaculus/manifold) at weight 0 — display-only, never scored (money-type rule). ;  # v11 2026-09-21: onboard IBKR house — add ibkr venue + title_patterns (bare "MI-13 General Election") + house_race_extraction prompt v1→v2 (XX-NN compact format + world-knowledge candidate party). Mirrors us-house v11; guard test keeps selectors aligned. ;  # v10 2026-09-18: drop CategorySelector, redundant for tags and its OR caused a tag-races seq scan ;  # v9 (2026-08-30): max_markets 12000→16000 — house pool grew past 12000 (kalshi 360 districts + polymarket), so the id-DESC cap was clipping the oldest legs. Raise over the ~14.6k word-boundary pool.  # v8 (2026-08-30): drop unused is_house_race_2026 factor (entity_lean never consumes it — pure eval cost)  # v7 (2026-08-30): drop robinhood from venues — no US House market (0 contributed)  # v6 (2026-08-30): cycle: 2026 gate — per-market election_cycle drops non-2026 kalshi legs; all 435 districts up every even year so no race_calendar entity gate (pass-through)  # v5 (2026-08-19): add robinhood venue
 title: "MAGA — US House 2026 (Republican Lean)"
-owner: danny
+owner: pmi-team
 
 venues: [forecastex, polymarket, kalshi, ibkr, metaculus, manifold, gemini]
 include_play_money: true   # play-money shown (holdings/venue/count) at weight 0 — never scored

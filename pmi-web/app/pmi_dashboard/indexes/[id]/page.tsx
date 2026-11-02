@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BacktestPanel } from "@/components/BacktestPanel";
+import { DriversTable } from "@/components/DriversTable";
 import { RefreshScoreButton } from "@/components/RefreshScoreButton";
 import { ScoreCard } from "@/components/ScoreCard";
 import { ScoreHistoryChart } from "@/components/ScoreHistoryChart";
 import { api, PmiApiError } from "@/lib/api-client";
-import type { HistoryEnvelope, IndexSummary, ScoreEnvelope } from "@/lib/types";
+import type { ExplainPayload, HistoryEnvelope, IndexSummary, ScoreEnvelope } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +15,14 @@ interface LoadResult {
   meta: IndexSummary | null;
   score: ScoreEnvelope | null;
   history: HistoryEnvelope | null;
+  explain: ExplainPayload | null;
   error: string | null;
   notFound: boolean;
 }
 
 async function load(id: string): Promise<LoadResult> {
   try {
-    const [meta, score, history] = await Promise.all([
+    const [meta, score, history, explain] = await Promise.all([
       api.getIndex(id),
       api.getScore(id).catch((e) => {
         // Score absent (NO_SCORE_YET) is a soft error — keep rendering the page.
@@ -31,14 +33,17 @@ async function load(id: string): Promise<LoadResult> {
         if (e instanceof PmiApiError && e.status === 404) return null;
         throw e;
       }),
+      // Explainability is optional for the page: any failure just hides the table.
+      api.explain(id).catch(() => null),
     ]);
-    return { meta, score, history, error: null, notFound: false };
+    return { meta, score, history, explain, error: null, notFound: false };
   } catch (e) {
     if (e instanceof PmiApiError && e.status === 404) {
       return {
         meta: null,
         score: null,
         history: null,
+        explain: null,
         error: null,
         notFound: true,
       };
@@ -53,6 +58,7 @@ async function load(id: string): Promise<LoadResult> {
       meta: null,
       score: null,
       history: null,
+      explain: null,
       error: message,
       notFound: false,
     };
@@ -62,7 +68,7 @@ async function load(id: string): Promise<LoadResult> {
 export default async function IndexPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const decoded = decodeURIComponent(id);
-  const { meta, score, history, error, notFound: nf } = await load(decoded);
+  const { meta, score, history, explain, error, notFound: nf } = await load(decoded);
 
   if (nf || !meta) {
     if (error) {
@@ -103,6 +109,13 @@ export default async function IndexPage({ params }: { params: Promise<{ id: stri
           <p className="text-xs text-ink-muted mt-2">{history.summary}</p>
         )}
       </section>
+
+      {explain && explain.components.length > 0 && (
+        <section>
+          <h2 className="text-base font-medium mb-3">What drives the score</h2>
+          <DriversTable components={explain.components} />
+        </section>
+      )}
 
       <section>
         <h2 className="text-base font-medium mb-3">Backtest</h2>

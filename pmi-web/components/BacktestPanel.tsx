@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Backtest panel (SHIP-3.4's "一鍵 replay 出 CSV" surfaced in the dashboard):
- * kick off POST /api/pmi/indexes/{id}/backtest, poll the durable workflow's
- * step progress, then chart the replayed points and offer the raw CSV.
+ * Backtest panel: one-click replay to CSV from the dashboard. Kicks off
+ * POST /api/pmi/indexes/{id}/backtest, polls the durable workflow's step
+ * progress, then charts the replayed points and offers the raw CSV.
  *
  * The replay reads only historical ts_price_snapshots — nothing is written
  * to ts_index_scores — so running one is always safe.
@@ -52,7 +52,7 @@ function parseCsv(text: string): HistoryPoint[] {
 }
 
 export function BacktestPanel({ indexId }: { indexId: string }) {
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(14);
   const [stepHours, setStepHours] = useState(24);
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<string | null>(null);

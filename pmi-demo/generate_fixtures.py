@@ -24,7 +24,7 @@ HISTORY_DAYS = 14
 rng = random.Random(20261102)
 
 
-def history(end: float, drift: float = 0.0, vol: float = 0.012) -> list[float]:
+def history(end: float, drift: float = 0.0, vol: float = 0.008) -> list[float]:
     """Daily prices for the HISTORY_DAYS before ``end``, walking backwards."""
     prices = []
     p = end
@@ -52,6 +52,12 @@ def market(venue, slug, title, price, volume, closes_in_days, judgements, drift=
     }
 
 
+# Storyline over the 14 days of history: Israel–Iran and North Korea tensions
+# rise and both ceasefires look less likely (war index up), and Republicans
+# gain in the contested Senate races (projected seats up). The Bitcoin ladder
+# rallies too, but the moneyness kernel re-centres on the implied spot, so a
+# ladder shifting up as a whole reads close to neutral — by design.
+
 # ── War index: conflict markets, country named in the title ─────────────────
 # Escalation markets resolve YES on more conflict (direction +1); peace
 # markets resolve YES on less (direction -1).
@@ -65,19 +71,19 @@ PEACE = {"war_direction": -1, "war_directly_about_war": 1, "armed_conflict": 1}
 
 war = [
     market("polymarket", "ru-ua-ceasefire", "Will Russia and Ukraine sign a ceasefire by March 31, 2027?",
-           0.18, 410_000, 150, {**PEACE, "state_actor": 1, "near_term": 1, "high_severity": 1}, drift=-0.004),
+           0.18, 410_000, 150, {**PEACE, "state_actor": 1, "near_term": 1, "high_severity": 1}, drift=-0.01),
     market("kalshi", "ua-front-advance", "Will Russian forces capture Zaporizhzhia city before 2028?",
            0.12, 95_000, 420, {**ESCALATION, "state_actor": 1, "high_severity": 1}),
     market("polymarket", "il-strike-ir", "Will Israel strike Iran before July 1, 2027?",
-           0.34, 520_000, 240, {**ESCALATION, "state_actor": 1, "near_term": 1, "high_severity": 1}, drift=0.006),
+           0.34, 520_000, 240, {**ESCALATION, "state_actor": 1, "near_term": 1, "high_severity": 1}, drift=0.015),
     market("polymarket", "gaza-ceasefire", "Will the Gaza ceasefire hold through March 2027?",
-           0.61, 180_000, 150, {**PEACE, "near_term": 1}),
+           0.61, 180_000, 150, {**PEACE, "near_term": 1}, drift=-0.012),
     market("kalshi", "cn-tw-blockade", "Will China impose a naval blockade on Taiwan before 2028?",
            0.08, 260_000, 420, {**ESCALATION, "state_actor": 1, "high_severity": 1}),
     market("polymarket", "nk-nuclear-test", "Will North Korea conduct a nuclear test before July 1, 2027?",
-           0.22, 140_000, 240, {**ESCALATION, "state_actor": 1, "near_term": 1, "high_severity": 1}),
+           0.22, 140_000, 240, {**ESCALATION, "state_actor": 1, "near_term": 1, "high_severity": 1}, drift=0.008),
     market("polymarket", "sudan-el-fasher", "Will the RSF capture El Fasher, Sudan before 2027?",
-           0.47, 38_000, 58, {**ESCALATION, "near_term": 1}, drift=0.01),
+           0.47, 38_000, 58, {**ESCALATION, "near_term": 1}, drift=0.015),
     market("kalshi", "in-pk-strikes", "Will India and Pakistan exchange military strikes before 2028?",
            0.15, 72_000, 420, {**ESCALATION, "state_actor": 1}),
     market("manifold", "am-az-peace", "Will Armenia and Azerbaijan sign a peace treaty in 2027?",
@@ -99,11 +105,12 @@ for strike in (90_000, 95_000, 100_000, 105_000, 110_000, 115_000, 120_000):
                f"Bitcoin price on Mar 31, 2027? - ${strike:,} or above",
                p, 60_000 + strike // 10, 150,
                {"btc_direction": 1, "btc_price_relevance": 1, "btc_major_move": int(abs(strike - SPOT) > 10_000)},
-               drift=0.004)
+               drift=0.015)
     )
 btc.append(
     market("polymarket", "btc-dip-85k", "Will Bitcoin dip to $85,000 before April 2027?",
-           0.31, 230_000, 150, {"btc_direction": -1, "btc_price_relevance": 1, "btc_major_move": 1})
+           0.31, 230_000, 150, {"btc_direction": -1, "btc_price_relevance": 1, "btc_major_move": 1},
+           drift=-0.012)
 )
 
 # ── US Senate 2026: party-direct race markets for all 35 seats up ───────────
@@ -129,12 +136,14 @@ for state, p_r in SENATE:
     slug = state.lower().replace(" ", "-")
     senate.append(
         market("polymarket", f"senate-{slug}-r", f"Will the Republicans win the {state} Senate race in 2026?",
-               p_r, 40_000 + int(p_r * 100_000), 60, {"republican_on_yes": 1}, category="politics")
+               p_r, 40_000 + int(p_r * 100_000), 60, {"republican_on_yes": 1}, category="politics",
+               drift=0.01 if 0.25 <= p_r <= 0.8 else 0.0)
     )
     if 0.35 <= p_r <= 0.65:
         senate.append(
             market("polymarket", f"senate-{slug}-d", f"Will the Democrats win the {state} Senate race in 2026?",
-                   round(1 - p_r - 0.01, 2), 35_000, 60, {"republican_on_yes": 0}, category="politics")
+                   round(1 - p_r - 0.01, 2), 35_000, 60, {"republican_on_yes": 0}, category="politics",
+                   drift=-0.01)
         )
 
 if __name__ == "__main__":
