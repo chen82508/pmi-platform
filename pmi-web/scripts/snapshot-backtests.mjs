@@ -5,7 +5,8 @@
  * through the same API path the live panel uses (POST /backtest → poll the
  * workflow → GET its CSV) and writes { [index_id]: [{ days, step_hours, csv }] }.
  *
- * Needs a demo stack with a worker on the `long` lane (workflows run there).
+ * Needs a demo stack with a worker on the `default` lane, where the API
+ * enqueues backtest workflows.
  *
  *   node scripts/snapshot-backtests.mjs http://localhost:8001 .snapshot/backtests.json
  */
@@ -49,7 +50,7 @@ async function replay(id, { days, step_hours }) {
       throw new Error(`${id} ${days}d backtest ${run.status}: ${run.error ?? ""}`);
     }
   }
-  throw new Error(`${id} ${days}d backtest still running after ${TIMEOUT_MS / 1000}s — is a long-lane worker up?`);
+  throw new Error(`${id} ${days}d backtest still running after ${TIMEOUT_MS / 1000}s — is a default-lane worker up?`);
 }
 
 const indexes = await (await call("/indexes")).json();

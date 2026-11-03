@@ -121,13 +121,14 @@ jobs:
       # The same demo, rendered into the read-only dashboard published on
       # GitHub Pages. Built on every run so a PR that breaks the export fails
       # here; only main uploads it for the pages job.
-      - name: Serve the demo (pmi-api, plus a long-lane worker for backtests)
+      # The API enqueues backtest workflows on the default lane.
+      - name: Serve the demo (pmi-api, plus a worker for backtests)
         env:
           PMI_API_PORT: "8001"
           PMI_API_REQUIRE_AUTH: "false"
         run: |
           nohup pmi-api > /tmp/pmi-api.log 2>&1 &
-          nohup pmi-workers worker --queue long > /tmp/pmi-worker.log 2>&1 &
+          nohup pmi-workers worker --queue default > /tmp/pmi-worker.log 2>&1 &
           for _ in $(seq 30); do curl -sf http://localhost:8001/health > /dev/null && exit 0; sleep 1; done
           exit 1
       - uses: actions/setup-node@v7
