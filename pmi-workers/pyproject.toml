@@ -25,7 +25,7 @@ dev = [
 ]
 
 [project.scripts]
-# Mirrors micah-job-executor's `run-job <name>` contract so supercronic
+# Mirrors the legacy job executor's `run-job <name>` contract so supercronic
 # crontabs port across without change.
 run-job = "pmi_workers.runner:main"
 pmi-workers = "pmi_workers.cli:cli"

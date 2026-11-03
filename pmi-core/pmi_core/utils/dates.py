@@ -1,6 +1,6 @@
 """UTC date utilities.
 
-Ported from `micah-db/micah_db/utils/dates.py` (2026-05). Kept as a thin
+Ported from the legacy Micah data package (2026-05). Kept as a thin
 standalone helper so the bucket collapser and date analyzer don't have to
 reach across the workspace into the legacy Micah package.
 """

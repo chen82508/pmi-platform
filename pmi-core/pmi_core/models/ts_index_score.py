@@ -34,7 +34,7 @@ class TsIndexScore(Base):
 
     # Nullable so the pipeline can persist "no score this tick" (below
     # min_components, zero relevancy) without leaving a stale value visible
-    # in the API — Micah backport, see micah PR #316 / job-executor PR #12.
+    # in the API — see alembic 0006.
     score: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     component_count: Mapped[int] = mapped_column(Integer, nullable=False)
     component_evaluation_ids: Mapped[list[int]] = mapped_column(

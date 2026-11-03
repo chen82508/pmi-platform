@@ -1,6 +1,6 @@
 """Date analysis utilities for market titles.
 
-Ported from `micah-db/micah_db/utils/date_analyzer.py` (2026-05-29 snapshot).
+Ported from the legacy Micah data package (2026-05-29 snapshot).
 
 Parses dates from prediction-market contract titles and determines whether
 a market refers to a past event. Supports MDY ("February 21, 2026") and

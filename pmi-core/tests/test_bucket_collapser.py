@@ -1,7 +1,7 @@
 """Unit tests for the date-aware bucket collapser.
 
-Ported from Micah's `tests/jobs/workflows/evaluate_contracts/test_bucket_collapser.py`
-(2026-05-29 — PR #15) and adapted for the platform's `MarketEvaluations`
+Ported from the legacy Micah job executor's bucket-collapser tests and
+adapted for the platform's `MarketEvaluations`
 shape. Pure-Python, no DB / MLflow / network.
 """
 

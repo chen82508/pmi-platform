@@ -423,7 +423,7 @@ async def seeded_data(
         # --- null-score fixture: a dedicated index def with ONE null-score row
         # and ONE real-score row, so route tests can assert the null surfaces
         # through /score, /score/history and /explain instead of crashing on
-        # float(None). Backport of Micah PR #316 / job-executor PR #12 — see
+        # float(None). See
         # alembic 0006 and the aggregator's "below min_components" path.
         null_ir = {
             **war_ir,

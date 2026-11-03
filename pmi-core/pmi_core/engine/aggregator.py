@@ -335,8 +335,7 @@ class AggregationResult:
     # None when the index can't produce a meaningful score this tick
     # (below ``min_components`` or zero weighted relevancy). Persisting NULL
     # rather than 0.0 prevents the API from returning a stale-looking real
-    # value when the real story is "no data" — Micah backport, see
-    # micah PR #316 / job-executor PR #12.
+    # value when the real story is "no data" (see alembic 0006).
     score: float | None
     component_count: int
     component_evaluation_ids: list[int]

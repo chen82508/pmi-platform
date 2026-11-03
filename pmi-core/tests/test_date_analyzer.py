@@ -2,7 +2,7 @@
 
 These tests cover only the bucket-related surface used by
 ``pmi_core.engine.bucket_collapser`` — full Micah parity isn't required.
-The original test suite lives in ``micah-db`` and exercises additional
+The original legacy test suite exercises additional
 edge cases (e.g. 2-digit years, DMY/MDY priority); those can be ported
 later if needed.
 """

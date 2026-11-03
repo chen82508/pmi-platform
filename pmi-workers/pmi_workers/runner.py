@@ -1,6 +1,6 @@
 """CLI entry point used by supercronic: `run-job <job_name>`.
 
-Ported from `micah-job-executor/app/runner.py`. The shape is identical so a
+Ported from the legacy job executor's runner. The shape is identical so a
 supercronic crontab from the legacy stack drops in unchanged; the only
 difference is the registered job functions take no `db` argument (see
 [`pmi_workers.registry`](registry.py) docstring).

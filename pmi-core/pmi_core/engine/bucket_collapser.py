@@ -22,8 +22,8 @@ probability:
     arithmetic mean — neither sum-capped nor noisy-OR are appropriate
     because the deadlines aren't independent events.
 
-Ported from Micah's `micah-job-executor/.../bucket_collapser.py`
-(2026-05-29 — PR #15 "noisy-OR + mean"). Adapted for the platform's
+Ported from the legacy Micah job executor's bucket collapser
+("noisy-OR + mean"). Adapted for the platform's
 `MarketEvaluations` shape (no `source` dimension — Polymarket-only —
 and the per-index `max_spread_days` lives in `CollapseSpec`).
 """

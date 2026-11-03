@@ -1,6 +1,6 @@
 """Job registry — name → async callable lookup.
 
-Ported verbatim from `micah-job-executor/app/jobs/registry.py` because the
+Ported verbatim from the legacy job executor's registry because the
 contract (decorate-and-discover) is independent of the underlying engine.
 The only change is the job signature: pmi-core jobs receive no `AsyncSession`
 because the pmi-core pipeline manages its own `session_scope()` internally

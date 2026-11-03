@@ -2,7 +2,7 @@
 
 Wraps `pmi_core.engine.run_pipeline()` so supercronic / Render cron can
 trigger one PMI tick without learning the Python module path. Mirrors the
-`micah-job-executor/app/jobs/update/pmi_score.py` pattern (job-class +
+legacy job executor's PMI-score job pattern (job-class +
 logger + Slack notify), but slimmed to the P0 essentials.
 
 Invocation:

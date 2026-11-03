@@ -1,7 +1,7 @@
 """Make ts_index_scores.score nullable so the pipeline can persist
 "no score this tick" without leaving a stale value visible.
 
-Backports Micah PR #316 / micah-job-executor PR #12 (2026-05-28), where
+Backports a fix from the legacy Micah stack, where
 the bug was countries dropping below ``MIN_CONTRACTS`` keeping the last
 computed PMI (Nigeria stuck at 76.5). On this platform the equivalent
 trigger is ``len(collapsed) < ir.aggregation.min_components`` or zero

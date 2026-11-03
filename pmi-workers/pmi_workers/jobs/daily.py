@@ -1,7 +1,7 @@
 """Daily cron: heavier maintenance.
 
 P0: placeholder that just runs `score-all` (because nothing else is wired
-yet). The shape mirrors `micah-job-executor/app/jobs/daily.py` so we can
+yet). The shape mirrors the legacy job executor's daily job so we can
 add embedding regeneration / peer-group rebuild / Tier 3 re-evaluation as
 they land without changing the supercronic crontab.
 """

@@ -1,4 +1,4 @@
-"""Route tests for null ts_index_scores.score (Micah PR #316 backport).
+"""Route tests for null ts_index_scores.score.
 
 The aggregator now persists ``score=None`` when the pipeline can't produce
 a meaningful score this tick (below ``min_components`` / zero relevancy).

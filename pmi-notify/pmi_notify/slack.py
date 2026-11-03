@@ -1,7 +1,6 @@
 """Adapter: Slack incoming-webhook transport.
 
-Ported from the legacy `micah-job-executor` `SlackService`
-(`app/shared/services/slack.py`) — same no-op-when-unconfigured and
+Ported from the legacy Micah job executor's `SlackService` — same no-op-when-unconfigured and
 never-crash-the-caller behaviour, rewritten to:
   * implement `BaseNotificationAdapter` (async-first, DIP-compliant)
   * accept an injectable `httpx.AsyncClient` (so tests never touch the network)

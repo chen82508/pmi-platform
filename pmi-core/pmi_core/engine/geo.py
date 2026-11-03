@@ -1,14 +1,14 @@
 """Geographic resources for the war-index vertical (W1).
 
-Ported from Micah legacy (`micah-db` constants + `micah-job-executor`
-country_weights) so the new platform's `group_by: country` extraction and
+Ported from Micah legacy (the data package's constants + the job
+executor's country weights) so the new platform's `group_by: country` extraction and
 `cross_entity: gdp_pop_weighted` rollup reconcile against the legacy War Index site:
 
   * ``REGIONS`` / ``REGION_MAPPING`` — the 6-region taxonomy and the
-    201-country → region map (micah-db ``models/constants.py``, verbatim).
+    201-country → region map (legacy constants, verbatim).
   * ``country_weights.json`` — GDP + population per country (65 % GDP / 35 %
     population PMI weighting; ``engine/data/country_weights.json``, copied from
-    ``micah-job-executor/data/``).
+    the legacy job executor).
   * ``COUNTRY_ALIASES`` + :func:`match_country` — a hand-written alias table on
     top of the 201 canonical names, turning a market title into ONE country
     slug (the patterns tier of the country grammar). Per CLAUDE.md §15.9 the
@@ -30,7 +30,7 @@ from functools import lru_cache
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Region taxonomy (micah-db models/constants.py, verbatim)
+# Region taxonomy (legacy constants, verbatim)
 # ---------------------------------------------------------------------------
 
 REGIONS: list[dict[str, str]] = [
@@ -44,7 +44,7 @@ REGIONS: list[dict[str, str]] = [
 
 REGION_NAME: dict[str, str] = {r["id"]: r["name"] for r in REGIONS}
 
-# country slug → region id (201 countries; ported verbatim from micah-db).
+# country slug → region id (201 countries; ported verbatim from legacy constants).
 REGION_MAPPING: dict[str, str] = {
     # Asia (30)
     "afghanistan": "asia",
@@ -308,7 +308,7 @@ def country_name(slug: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# GDP / population weights (micah-job-executor data, verbatim file)
+# GDP / population weights (legacy job-executor data, verbatim file)
 # ---------------------------------------------------------------------------
 
 GDP_WEIGHT = 0.65
@@ -332,7 +332,7 @@ def _weight_data() -> dict[str, tuple[float, float]]:
 def gdp_pop_weights(slugs: list[str]) -> dict[str, float]:
     """Within-group 65 % GDP / 35 % population normalized weights.
 
-    Reproduces ``micah-job-executor`` ``country_weights.compute_weighted_pmi``'s
+    Reproduces the legacy job executor's ``compute_weighted_pmi``
     weight math (the numerator/denominator there is a weighted mean; this
     returns just the per-slug weight so the caller can fold values how it
     likes). A slug with no GDP/pop data gets the average weight of those that

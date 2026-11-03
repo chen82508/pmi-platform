@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# Supercronic — same arch-aware install as legacy micah-job-executor so
+# Supercronic — same arch-aware install as the legacy job executor so
 # the resulting Render / Fly cron container is interchangeable.
 ARG SUPERCRONIC_VERSION=0.2.45
 RUN apt-get update \

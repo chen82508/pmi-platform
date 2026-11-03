@@ -1,7 +1,7 @@
 """pmi-workers — scheduled + queued worker pool over pmi-core.
 
 P0 surface: `run-job <name>` CLI driven by supercronic. Mirrors the
-`micah-job-executor` contract so legacy crontab entries port over verbatim.
+legacy job executor's contract so legacy crontab entries port over verbatim.
 
 P1 surface (`.[arq]` extra): Arq workers for fire-and-forget tasks
 (webhook fan-out, WS-triggered single-market re-eval). See README.

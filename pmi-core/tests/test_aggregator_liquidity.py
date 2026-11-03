@@ -342,8 +342,8 @@ def test_aggregate_handles_cold_start_gracefully() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Null-score paths — backport of Micah PR #316 / job-executor PR #12
-# (2026-05-28). The bug was countries below MIN_CONTRACTS keeping the last
+# Null-score paths — backport of a legacy Micah fix (2026-05-28).
+# The bug was countries below MIN_CONTRACTS keeping the last
 # computed PMI visible to the UI; the fix persists NULL rather than letting
 # a stale value linger. Equivalent triggers on this platform:
 #   - below ``min_components`` after collapse
