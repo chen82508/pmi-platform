@@ -41,6 +41,7 @@ tests and lint run from one host virtualenv (`just venv`).
 | One package's tests (start the DB once with `just test-db`) | `just test pmi-api` |
 | Everything CI runs | `just ci` |
 | Regenerate README images (after `just e2e`) | `just screenshots` |
+| Static dashboard export, as published on GitHub Pages (after `just e2e`) | `just web-static /pmi-platform` |
 | pmi-core CLI inside the stack | `docker compose --profile pmi run --rm pmi-core <cmd>` |
 
 DB-backed suites (`pmi-api`, `pmi-workers`) create a throwaway database on the

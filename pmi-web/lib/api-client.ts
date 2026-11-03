@@ -11,6 +11,7 @@
  * attach the service key; the browser path never sees it.
  */
 
+import { STATIC_EXPORT } from "./static-export";
 import type {
   ExplainPayload,
   HistoryEnvelope,
@@ -56,9 +57,12 @@ async function get<T>(path: string, init?: RequestInit, baseOverride?: string): 
   // Default to no caching on the server so a Server Component refresh
   // surfaces a fresh score immediately. A caller that passes
   // `next.revalidate` opts into Next's data cache instead (and must not also
-  // send `cache: "no-store"`, which would win).
+  // send `cache: "no-store"`, which would win). The static export reads once
+  // at build, and an explicit no-store there would fail the export.
   const cacheDefault: RequestInit =
-    init?.cache || init?.next?.revalidate !== undefined ? {} : { cache: "no-store" };
+    STATIC_EXPORT || init?.cache || init?.next?.revalidate !== undefined
+      ? {}
+      : { cache: "no-store" };
   const res = await fetch(url, {
     ...cacheDefault,
     ...init,

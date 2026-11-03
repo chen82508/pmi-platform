@@ -104,7 +104,7 @@ jobs:
       - name: Install
         run: |
           uv venv .venv
-          uv pip install --python .venv -e pmi-core -e pmi-notify -e pmi-workers
+          uv pip install --python .venv -e pmi-core -e pmi-notify -e pmi-workers -e pmi-api
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Migrate, seed, bind fixture models, tag races
         working-directory: pmi-core
@@ -118,6 +118,59 @@ jobs:
         run: pmi-core demo history --days 14
       - name: Every demo index published a full non-null series
         run: psql "postgresql://pmi:pmi@localhost:5432/pmi" -v ON_ERROR_STOP=1 -At -f scripts/demo_assertions.sql
+      # The same demo, rendered into the read-only dashboard published on
+      # GitHub Pages. Built on every run so a PR that breaks the export fails
+      # here; only main uploads it for the pages job.
+      - name: Serve the demo (pmi-api, plus a long-lane worker for backtests)
+        env:
+          PMI_API_PORT: "8001"
+          PMI_API_REQUIRE_AUTH: "false"
+        run: |
+          nohup pmi-api > /tmp/pmi-api.log 2>&1 &
+          nohup pmi-workers worker --queue long > /tmp/pmi-worker.log 2>&1 &
+          for _ in $(seq 30); do curl -sf http://localhost:8001/health > /dev/null && exit 0; sleep 1; done
+          exit 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pmi-web/package-lock.json
+      - name: Static dashboard export
+        working-directory: pmi-web
+        env:
+          NEXT_PUBLIC_PMI_STATIC: "1"
+          PMI_WEB_BASE_PATH: /${{ github.event.repository.name }}
+          PMI_API_URL: http://localhost:8001
+        run: |
+          npm ci
+          node scripts/snapshot-backtests.mjs http://localhost:8001 .snapshot/backtests.json
+          npm run build
+      - name: Demo service logs
+        if: failure()
+        run: tail -n 100 /tmp/pmi-api.log /tmp/pmi-worker.log || true
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pmi-web/out
+
+  pages:
+    name: deploy dashboard snapshot
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python, demo-e2e, web]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    # One deployment at a time across branches and runs.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
 
   web:
     runs-on: ubuntu-latest

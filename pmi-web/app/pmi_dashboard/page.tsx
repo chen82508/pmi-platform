@@ -1,13 +1,13 @@
 import Link from "next/link";
+import { connection } from "next/server";
 
 import { DeltaPill } from "@/components/DeltaPill";
 import { Sparkline } from "@/components/Sparkline";
 import { api, PmiApiError } from "@/lib/api-client";
 import { unitOf } from "@/lib/format";
+import { STATIC_EXPORT } from "@/lib/static-export";
 import { formatAsOf } from "@/lib/text";
 import type { HistoryPoint, IndexSummary, ScorePayload } from "@/lib/types";
-
-export const dynamic = "force-dynamic";
 
 interface IndexRow {
   meta: IndexSummary;
@@ -32,6 +32,8 @@ async function loadIndexes(): Promise<{ rows: IndexRow[]; error: string | null }
     const metas = await api.listIndexes();
     return { rows: await Promise.all(metas.map(loadRow)), error: null };
   } catch (e) {
+    // A static export must fail the build, not publish the error card.
+    if (STATIC_EXPORT) throw e;
     const message =
       e instanceof PmiApiError
         ? `${e.status} from pmi-api at ${e.url}`
@@ -86,6 +88,9 @@ function ScoredCard({ meta, score, points }: IndexRow) {
 }
 
 export default async function Page() {
+  // Segment config (`dynamic`) must be a literal, so the live build opts into
+  // per-request rendering here; the static export renders once at build.
+  if (!STATIC_EXPORT) await connection();
   const { rows, error } = await loadIndexes();
   const scored = rows.filter((r) => r.score?.score != null);
   const idle = rows.filter((r) => r.score?.score == null);

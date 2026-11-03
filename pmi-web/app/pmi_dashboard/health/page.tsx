@@ -1,7 +1,9 @@
-import { api, PmiApiError } from "@/lib/api-client";
-import type { SourceHealthRow } from "@/lib/types";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+import { api, PmiApiError } from "@/lib/api-client";
+import { SNAPSHOT_AT, STATIC_EXPORT } from "@/lib/static-export";
+import { formatAsOf } from "@/lib/text";
+import type { SourceHealthRow } from "@/lib/types";
 
 interface State {
   apiHealth: { status: string; db: string } | null;
@@ -50,7 +52,36 @@ function Pill({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+// Health read at build time would be stale the moment it was published, so
+// the static export says what it is instead of showing old green pills.
+function SnapshotHealth() {
+  return (
+    <>
+      <section className="hero-band pb-20 pt-10">
+        <div className="container-x">
+          <p className="eyebrow text-[#93B4F8]">Operations</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Health</h1>
+        </div>
+      </section>
+      <div className="container-x -mt-10">
+        <section className="card p-5 text-sm">
+          <h2 className="card-title">Static snapshot</h2>
+          <p className="mt-2 max-w-2xl text-ink-muted">
+            This copy of the dashboard was rendered from the fixture demo on{" "}
+            {formatAsOf(SNAPSHOT_AT)} and has no API or database behind it, so there is no
+            live health to report. Run <code className="font-mono">just e2e</code> to start the
+            full stack with this page reading pmi-api.
+          </p>
+        </section>
+      </div>
+    </>
+  );
+}
+
 export default async function Health() {
+  if (STATIC_EXPORT) return <SnapshotHealth />;
+  // See the index list page: the live build renders per request.
+  await connection();
   const { apiHealth, sources, error } = await load();
   const apiOk = apiHealth?.status === "ok";
   const dbOk = String(apiHealth?.db) === "true" || apiHealth?.db === "ok";

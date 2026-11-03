@@ -25,6 +25,11 @@ and market prices that produced it.
 
 ## See it in 30 seconds
 
+**[Browse the live snapshot →](https://chen82508.github.io/pmi-platform/)** A
+read-only static export of the dashboard, rendered by CI from the fixture demo
+on every push to `main`. Backtests are precomputed; on-demand refresh and live
+health need the full stack ([run it locally](#how-to-run-locally)).
+
 ![Walkthrough: index list, war index history with tooltip, the markets behind the score, and a backtest replay](docs/images/walkthrough.gif)
 
 <table>
@@ -128,8 +133,8 @@ flowchart LR
 
 ## How to run locally
 
-There is no hosted demo, so the repository is built to be reproduced. Two
-pieces make that possible:
+The hosted snapshot is static, so the repository itself is built to be
+reproduced. Two pieces make that possible:
 
 - **A synthetic market world** replaces the live exchange feeds: 58 invented
   markets (conflict, a Bitcoin strike ladder, all 35 US Senate seats up in
@@ -266,7 +271,8 @@ See [`infra/terraform/README.md`](infra/terraform/README.md) for usage.
 | Job | Checks |
 |---|---|
 | `python (matrix)` | ruff and pytest for each Python package, against a pgvector service container; dry-run of every index definition |
-| `fixture demo end-to-end` | the `just e2e` flow against a Postgres service container, checked by the same [`scripts/demo_assertions.sql`](scripts/demo_assertions.sql) |
+| `fixture demo end-to-end` | the `just e2e` flow against a Postgres service container, checked by the same [`scripts/demo_assertions.sql`](scripts/demo_assertions.sql); then the static dashboard export (`just web-static`) from that demo |
+| `deploy dashboard snapshot` | on `main` only, once every check above passes: publishes the export to GitHub Pages |
 | `web` | `tsc`, vitest, `next build` |
 | `terraform` | `fmt -check`, `validate`, tflint with the AWS ruleset |
 | `slack notifier lambda` | ruff and pytest |

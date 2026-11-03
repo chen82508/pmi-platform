@@ -16,6 +16,26 @@ Recharts). Server components fetch through `lib/api-client.ts`; client
 components call the `/api/pmi/*` route handlers so the API key never reaches the
 browser. Keep that split.
 
+### Two builds
+
+The same code also builds a read-only static export (`NEXT_PUBLIC_PMI_STATIC=1`,
+`just web-static`) that CI publishes to GitHub Pages. There is no API behind it
+at runtime, so:
+
+- Anything that calls `/api/pmi/*` from the browser (refresh, live backtest)
+  is gated on `STATIC_EXPORT` from `lib/static-export.ts`, with an honest
+  static substitute or nothing at all. Route handlers are `.ts` and only exist
+  in the live build.
+- Don't add `export const dynamic`: it must be a literal and breaks one of the
+  two builds. Pages call `connection()` when not static; a dynamic route that
+  needs `generateStaticParams` uses a `page.live.tsx` / `page.export.tsx` pair
+  (see `app/pmi_dashboard/indexes/[id]/`).
+- In the static build, an API error must throw (fail the build) instead of
+  rendering the error card.
+
+Verify both: `just web-check`, then `just web-static /pmi-platform` against a
+running demo and look at `pmi-web/out` served under `/pmi-platform/`.
+
 ## 1. Palette — tokens only
 
 Defined once in `tailwind.config.ts`; never write a raw hex in a component

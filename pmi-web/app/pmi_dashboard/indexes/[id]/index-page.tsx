@@ -1,3 +1,11 @@
+/**
+ * Index detail page, shared by the two route entries next to it:
+ * `page.live.tsx` (live build, rendered per request) and `page.export.tsx`
+ * (static export, one page per definition). They need opposite segment config
+ * (`dynamic = "force-dynamic"` vs `generateStaticParams`), which must be
+ * literal exports, and each entry's extension is a route only in its own
+ * build (next.config.ts `pageExtensions`).
+ */
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -7,11 +15,11 @@ import { DriversTable } from "@/components/DriversTable";
 import { RefreshScoreButton } from "@/components/RefreshScoreButton";
 import { ScoreHistoryChart } from "@/components/ScoreHistoryChart";
 import { api, PmiApiError } from "@/lib/api-client";
+import { snapshotBacktests } from "@/lib/backtest-snapshot";
 import { unitOf } from "@/lib/format";
+import { STATIC_EXPORT } from "@/lib/static-export";
 import { formatAsOf } from "@/lib/text";
 import type { ExplainPayload, HistoryEnvelope, IndexSummary, ScoreEnvelope } from "@/lib/types";
-
-export const dynamic = "force-dynamic";
 
 interface LoadResult {
   meta: IndexSummary | null;
@@ -40,6 +48,8 @@ async function load(id: string): Promise<LoadResult> {
     ]);
     return { meta, score, history, explain, error: null, notFound: false };
   } catch (e) {
+    // A static export must fail the build, not publish the error card.
+    if (STATIC_EXPORT) throw e;
     if (e instanceof PmiApiError && e.status === 404) {
       return { ...EMPTY, error: null, notFound: true };
     }
@@ -69,6 +79,8 @@ export default async function IndexPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const decoded = decodeURIComponent(id);
   const { meta, score, history, explain, error, notFound: nf } = await load(decoded);
+  // No backend in the export, so its backtest panel replays precomputed runs.
+  const snapshot = STATIC_EXPORT ? await snapshotBacktests(decoded) : undefined;
 
   if (nf || !meta) {
     if (error) {
@@ -103,7 +115,7 @@ export default async function IndexPage({ params }: { params: Promise<{ id: stri
                 {data && <span>{data.venues.join(" · ")}</span>}
               </div>
             </div>
-            <RefreshScoreButton indexId={meta.id} />
+            {!STATIC_EXPORT && <RefreshScoreButton indexId={meta.id} />}
           </div>
 
           {data && data.score !== null ? (
@@ -156,8 +168,15 @@ export default async function IndexPage({ params }: { params: Promise<{ id: stri
           </Section>
         )}
 
-        <Section title="Backtest" aside="Replays past prices as a durable workflow; nothing is written">
-          <BacktestPanel indexId={meta.id} />
+        <Section
+          title="Backtest"
+          aside={
+            snapshot
+              ? "Replayed when this snapshot was built; the live stack runs any window"
+              : "Replays past prices as a durable workflow; nothing is written"
+          }
+        >
+          <BacktestPanel indexId={meta.id} snapshot={snapshot} />
         </Section>
 
         <Section title="Definition lineage">

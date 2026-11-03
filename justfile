@@ -91,6 +91,13 @@ lint:
 web-check:
     cd {{root_dir}}/pmi-web && npm ci && npm run typecheck && npm test && npm run build
 
+# Read-only static export of the dashboard into pmi-web/out, rendered from a
+# running demo stack (`just e2e`); CI publishes the same build to GitHub Pages.
+# BASE_PATH='/pmi-platform' reproduces the Pages build.
+web-static BASE_PATH='':
+    cd {{root_dir}}/pmi-web && npm ci && node scripts/snapshot-backtests.mjs http://localhost:8001 .snapshot/backtests.json
+    cd {{root_dir}}/pmi-web && NEXT_PUBLIC_PMI_STATIC=1 PMI_WEB_BASE_PATH={{BASE_PATH}} PMI_API_URL=http://localhost:8001 npm run build
+
 # Everything CI runs, locally (needs uv, node and terraform on the host).
 ci: lint test-all web-check tf-check e2e
 

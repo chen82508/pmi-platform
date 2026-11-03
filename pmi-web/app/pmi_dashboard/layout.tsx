@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { NavLinks } from "@/components/NavLinks";
+import { SNAPSHOT_AT, STATIC_EXPORT } from "@/lib/static-export";
+import { formatAsOf } from "@/lib/text";
 
 /**
  * Operational dashboard chrome: index list, source health and per-index
@@ -31,6 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span className="hidden items-center gap-1.5 rounded-full border border-white/15 px-2.5 py-1 text-xs text-white/70 sm:flex">
               <span className="h-1.5 w-1.5 rounded-full bg-positive" />
               Fixture data
+              {STATIC_EXPORT && ` · snapshot ${formatAsOf(SNAPSHOT_AT)}`}
             </span>
           </div>
         </div>

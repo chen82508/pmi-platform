@@ -7,11 +7,15 @@
  *
  * The replay reads only historical ts_price_snapshots — nothing is written
  * to ts_index_scores — so running one is always safe.
+ *
+ * The static export passes `snapshot` (replays precomputed at build) and the
+ * panel switches to picking among those, since there is no API to run one.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ScoreHistoryChart } from "@/components/ScoreHistoryChart";
+import { type BacktestRun, parseBacktestCsv } from "@/lib/backtest";
 import type { HistoryPoint } from "@/lib/types";
 
 interface WorkflowEnvelope {
@@ -30,28 +34,79 @@ type Phase = "idle" | "starting" | "running" | "done" | "error";
 const POLL_MS = 2000;
 const TIMEOUT_MS = 10 * 60_000; // long replays are legitimate — generous cap
 
-/** Parse the workflow CSV (as_of,score,component_count) into chart points. */
-function parseCsv(text: string): HistoryPoint[] {
-  const lines = text.trim().split("\n");
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",");
-  const col = (name: string) => headers.indexOf(name);
-  const iAsOf = col("as_of");
-  const iScore = col("score");
-  const iCount = col("component_count");
-  if (iAsOf < 0) return [];
-  return lines.slice(1).map((line) => {
-    const cells = line.split(",");
-    const rawScore = iScore >= 0 ? cells[iScore] : "";
-    return {
-      as_of: cells[iAsOf],
-      score: rawScore === "" || rawScore == null ? null : Number(rawScore),
-      component_count: iCount >= 0 ? Number(cells[iCount] || 0) : 0,
-    };
-  });
+function downloadCsv(csv: string, filename: string): void {
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-export function BacktestPanel({ indexId }: { indexId: string }) {
+function ReplayResult({ points }: { points: HistoryPoint[] }) {
+  if (points.length === 0) {
+    return (
+      <p className="text-xs text-ink-muted">
+        Workflow finished but returned no points — try a shorter window.
+      </p>
+    );
+  }
+  return (
+    <div>
+      <p className="text-xs text-ink-muted mb-2">
+        {points.filter((p) => p.score != null).length} scored of {points.length}{" "}
+        replayed points (gaps = ticks below min_components or with no snapshot
+        coverage).
+      </p>
+      <ScoreHistoryChart points={points} height={280} />
+    </div>
+  );
+}
+
+function SnapshotBacktest({ indexId, runs }: { indexId: string; runs: BacktestRun[] }) {
+  const [selected, setSelected] = useState(runs.length - 1);
+  if (runs.length === 0) {
+    return (
+      <p className="text-sm text-ink-muted">
+        No replay in this snapshot: the index had no readings when it was built.
+      </p>
+    );
+  }
+  const run = runs[selected];
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {runs.map((r, i) => (
+          <button
+            key={`${r.days}-${r.step_hours}`}
+            type="button"
+            onClick={() => setSelected(i)}
+            aria-pressed={i === selected}
+            className={i === selected ? "btn-primary" : "btn-secondary"}
+          >
+            {r.days} days · {r.step_hours}h step
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => downloadCsv(run.csv, `${indexId}-backtest-${run.days}d.csv`)}
+          className="btn-secondary"
+        >
+          Download CSV
+        </button>
+      </div>
+      <ReplayResult points={parseBacktestCsv(run.csv)} />
+    </div>
+  );
+}
+
+export function BacktestPanel({ indexId, snapshot }: { indexId: string; snapshot?: BacktestRun[] }) {
+  if (snapshot) return <SnapshotBacktest indexId={indexId} runs={snapshot} />;
+  return <LiveBacktest indexId={indexId} />;
+}
+
+function LiveBacktest({ indexId }: { indexId: string }) {
   const [days, setDays] = useState(14);
   const [stepHours, setStepHours] = useState(24);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -102,7 +157,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
           const text = await csvRes.text();
           if (!alive.current) return;
           setCsv(text);
-          setPoints(parseCsv(text));
+          setPoints(parseBacktestCsv(text));
           setPhase("done");
           return;
         }
@@ -119,14 +174,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
   }, [indexId, days, stepHours]);
 
   const download = useCallback(() => {
-    if (!csv) return;
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${indexId}-backtest-${days}d.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (csv) downloadCsv(csv, `${indexId}-backtest-${days}d.csv`);
   }, [csv, indexId, days]);
 
   const busy = phase === "starting" || phase === "running";
@@ -189,21 +237,7 @@ export function BacktestPanel({ indexId }: { indexId: string }) {
         <p className="font-mono text-xs text-[#B91C1C]">{error}</p>
       )}
 
-      {points && points.length > 0 && (
-        <div>
-          <p className="text-xs text-ink-muted mb-2">
-            {points.filter((p) => p.score != null).length} scored of {points.length}{" "}
-            replayed points (gaps = ticks below min_components or with no snapshot
-            coverage).
-          </p>
-          <ScoreHistoryChart points={points} height={280} />
-        </div>
-      )}
-      {points && points.length === 0 && (
-        <p className="text-xs text-ink-muted">
-          Workflow finished but returned no points — try a shorter window.
-        </p>
-      )}
+      {points && <ReplayResult points={points} />}
     </div>
   );
 }
